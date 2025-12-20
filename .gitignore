@@ -2,4 +2,9 @@
 .env
 /test_segments
 /.idea
+/.vscode/
+/whisper_data/
 docker-compose.yml
+__pycache__/
+*.py[cod]
+*$py.class
