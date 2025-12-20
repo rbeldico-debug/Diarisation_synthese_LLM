@@ -1,23 +1,20 @@
 project_root/
 │
-├── main.py                    # Point d'entrée, orchestration des processus
-├── config.py                  # Configuration globale (seuils VAD, chemins modèles, device)
+├── main.py                    # Orchestration (Oreille <-> Cerveau)
+├── config.py                  # Seuils VAD et URLs API (8000 pour Whisper, 11434 pour Ollama)
+├── .env                       # HF_TOKEN et clés privées
+├── docker-compose.yml         # CONFIGURATION DU SERVEUR IA (Whisper + Diarization)
 │
-├── core/                      # (Module partagé)
-│   ├── __init__.py
-│   └── data_models.py         # Dataclasses pour les échanges (ex: AudioSegment, Transcript)
+├── core/
+│   └── data_models.py         # Payload AudioPayload
 │
-├── ears/                      # (ADR-001)
-│   ├── __init__.py
-│   ├── microphone.py          # Gestion pure du matériel (PyAudio/Sounddevice)
-│   └── vad_engine.py          # Logique Silero : Découpage flux -> Segments
+├── ears/
+│   ├── microphone.py          # Capture SoundDevice
+│   └── vad_engine.py          # Silero VAD (léger, local)
 │
-├── brain/                     # (ADR-002)
-│   ├── __init__.py
-│   ├── pipeline.py            # Orchestre Pyannote + Whisper
-│   ├── diarization.py         # Wrapper pour Pyannote
-│   └── transcription.py       # Wrapper pour Faster-Whisper
+├── brain/
+│   ├── transcription.py       # Client API pour le serveur Docker
+│   └── diarization.py         # Client API (Speaker ID via Docker)
 │
-└── output/                    # (Traitement aval)
-    ├── __init__.py
-    └── formatter.py           # Mise en forme du texte pour le contexte (JDR, Médical...)
+└── output/
+    └── formatter.py           # Historique et mise en forme du dialogue

@@ -87,8 +87,8 @@ class VADSegmenter:
 
         return None
 
-    def _finalize_segment(self) -> AudioPayload:
-        """Crée l'objet final et nettoie le buffer."""
+    def _finalize_segment(self) -> Optional[AudioPayload]:
+        """Crée l'objet final et nettoie le buffer. Retourne None si vide."""
         if not self.buffer:
             return None
 
@@ -102,7 +102,7 @@ class VADSegmenter:
             duration_seconds=duration
         )
 
-        # Reset de l'état
+        # Reset complet de l'état pour la prochaine phrase
         self.buffer = []
         self.is_speaking = False
         self.silence_counter = 0

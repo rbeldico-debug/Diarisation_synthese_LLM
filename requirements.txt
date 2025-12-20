@@ -1,18 +1,8 @@
-# === Outils Système & Audio ===
-numpy>=1.26.0
-scipy>=1.11.0
-sounddevice>=0.4.6
-python-dotenv>=1.0.0
-colorama>=0.4.6
-
-# === IA & Traitement ===
-# Note : Pour Torch, voir les instructions d'installation spécifiques (CUDA)
-faster-whisper>=1.0.0
-pyannote.audio>=3.1.0
-openai>=1.0.0  # Utilisé pour le client Ollama
-
-# === Dépendances implicites critiques ===
-# Souvent requises pour éviter les erreurs de compilation Cf README.exe.
+# --- Flux Audio & VAD (Local - Compatible Python 3.13) ---
+# pip install torch torchaudio --extra-index-url https://download.pytorch.org/whl/cu121
+openai
+python-dotenv
+sounddevice
+numpy==1.26.4
+torch
 packaging
-torchaudio
-torchvision

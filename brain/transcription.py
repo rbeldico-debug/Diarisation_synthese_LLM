@@ -1,29 +1,30 @@
+# brain/transcription.py
+from openai import OpenAI
+import io
+import wave
 import numpy as np
-from faster_whisper import WhisperModel
-
+from config import Config
 
 class Transcriber:
-    """
-    Wrapper pour Faster-Whisper.
-    """
+    def __init__(self):
+        # Utilisation du client compatible OpenAI pour parler à Speaches
+        self.client = OpenAI(base_url=Config.WHISPER_BASE_URL, api_key="not-needed")
 
-    def __init__(self, model_size="large-v3", device="cuda", compute_type="float16"):
-        print(f"Chargement de Whisper ({model_size}) sur {device}...")
+    def transcribe(self, audio_data: np.ndarray, sample_rate: int) -> str:
+        """Envoie l'audio au serveur Docker et récupère le texte."""
+        buffer = io.BytesIO()
+        with wave.open(buffer, 'wb') as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2) # 16-bit
+            wf.setframerate(sample_rate)
+            wf.writeframes((audio_data * 32767).astype('int16').tobytes())
+        buffer.seek(0)
+
         try:
-            self.model = WhisperModel(model_size, device=device, compute_type=compute_type)
-            print("Whisper chargé.")
+            response = self.client.audio.transcriptions.create(
+                model=Config.WHISPER_MODEL,
+                file=("audio.wav", buffer)
+            )
+            return response.text
         except Exception as e:
-            print(f"Erreur chargement Whisper: {e}")
-            print("Tentative de fallback sur CPU (lent)...")
-            self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
-
-    def transcribe(self, audio_data: np.ndarray, sample_rate: int = 16000) -> str:
-        """
-        Retourne le texte transcrit à partir d'un segment audio brut.
-        """
-        # Faster-Whisper accepte directement le numpy array
-        segments, info = self.model.transcribe(audio_data, beam_size=5, language="fr")
-
-        # On rassemble tous les segments en une seule chaîne
-        full_text = " ".join([segment.text for segment in segments])
-        return full_text.strip()
+            return f"[Erreur Transcription: {e}]"

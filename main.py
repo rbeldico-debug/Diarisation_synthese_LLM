@@ -1,20 +1,16 @@
+# main.py (Imports nettoyés)
 import multiprocessing
 import queue
-import sys
 import time
-from datetime import datetime
+import numpy as np
 
-# Import des modules locaux
-from core.data_models import AudioPayload
+# Patch NumPy pour compatibilité ascendante
+if not hasattr(np, "NaN"):
+    np.NaN = np.nan
+
 from ears.microphone import MicrophoneStream
 from ears.vad_engine import VADSegmenter
-from brain.llm_client import LLMClient
 from config import Config
-
-
-# Note : On n'importe PAS Transcriber/Diarizer ici au niveau global
-# pour éviter qu'ils soient chargés dans le processus principal inutilement.
-
 
 def ear_process(audio_queue: multiprocessing.Queue, stop_event: multiprocessing.Event):
     """
@@ -52,26 +48,19 @@ def ear_process(audio_queue: multiprocessing.Queue, stop_event: multiprocessing.
 
 
 def brain_process(audio_queue: multiprocessing.Queue, stop_event: multiprocessing.Event):
-    """
-    Processus P2 (Consommateur) : Récupère les segments et applique l'IA.
-    """
-    print("[Cerveau] Chargement des modèles (Whisper + Pyannote)... Patience.")
-
+    """Processus P2 : Consomme les segments audio et coordonne l'IA."""
     from brain.transcription import Transcriber
     from brain.diarization import Diarizer
-    # Import du nouveau module
+    from brain.llm_client import LLMClient
     from output.formatter import DialogueFormatter
-    from config import Config  # Pour accéder aux constantes si besoin
 
-    try:
-        transcriber = Transcriber()
-        diarizer = Diarizer()
-        formatter = DialogueFormatter()  # <-- Initialisation
-        llm = LLMClient() # <--- NOUVEAU
-        print("[Cerveau] 🧠 Modèles chargés. En attente de données...")
-    except Exception as e:
-        print(f"[Cerveau] ❌ Erreur critique chargement modèles : {e}")
-        return
+    # Initialisation des ouvriers
+    transcriber = Transcriber()
+    diarizer = Diarizer()
+    llm = LLMClient()
+    formatter = DialogueFormatter()
+
+    print("[Cerveau] 🧠 Prêt à traiter les segments.")
 
     while not stop_event.is_set():
         try:
@@ -79,51 +68,28 @@ def brain_process(audio_queue: multiprocessing.Queue, stop_event: multiprocessin
         except queue.Empty:
             continue
 
-        # --- TRAITEMENT IA ---
-        start_time = time.time()
-        print(f"\n[Cerveau] ⚙️ Traitement...")
+        # 1. Transcription & Diarisation (via Docker)
+        text = transcriber.transcribe(payload.audio_data, payload.sample_rate)
 
-        # 1. Transcription
-        try:
-            text = transcriber.transcribe(payload.audio_data, payload.sample_rate)
-        except Exception as e:
-            print(f"[Cerveau] Erreur Whisper : {e}")
-            text = "..."
+        speakers = ["Utilisateur"]
+        if payload.duration_seconds > Config.MIN_DURATION_FOR_DIARIZATION:
+            speakers = diarizer.diarize(payload.audio_data, payload.sample_rate)
 
-        # 2. Diarisation
-        speakers_list = []
-        if payload.duration_seconds >= Config.MIN_DURATION_FOR_DIARIZATION:
-            try:
-                segments = diarizer.diarize(payload.audio_data, payload.sample_rate)
-                speakers_list = sorted(list(set([s['speaker'] for s in segments])))
-            except Exception as e:
-                print(f"[Cerveau] Erreur Diarization : {e}")
+        # 2. Formatage du tour de parole
+        display_line = formatter.process_turn(text, speakers)
+        print(f"\n{display_line}")
 
-        # 3. Formatage & Historique
-        formatted_line = formatter.process_turn(text, speakers_list)
-        process_time = time.time() - start_time
-        print(f"✅ {formatted_line} (Calcul: {process_time:.2f}s)")
-
-        # 4. GÉNÉRATION DE RÉPONSE (Si c'est l'utilisateur qui parle)
-        if "Utilisateur" in formatted_line or "Gérald" in formatted_line:
-            print("[Cerveau] 🤔 Réflexion...")
-
-            # --- CHRONO DÉBUT ---
-            llm_start_time = time.time()
-
-            # On envoie tout l'historique
+        # 3. Réflexion & Réponse LLM
+        # On ne répond que si le texte n'est pas vide et si c'est l'utilisateur qui parle
+        if len(text.strip()) > 2:
             context = formatter.get_context_string()
+            print("🤖 Assistant réfléchit...", end="\r")
+
             response = llm.query(context, text)
 
-            # --- CHRONO FIN ---
-            llm_duration = time.time() - llm_start_time
-
-            # On l'ajoute aussi à l'historique pour que l'IA s'en souvienne
+            # On ajoute la réponse de l'IA à l'historique
             formatter.process_turn(response, ["Assistant"])
-
-            # Affichage avec le temps de latence
-            print(f"🤖 Assistant: {response} (Génération: {llm_duration:.2f}s)")
-            print("-" * 50)
+            print(f"🤖 Assistant: {response}")
 
 
 if __name__ == "__main__":

@@ -2,3 +2,4 @@
 .env
 /test_segments
 /.idea
+docker-compose.yml

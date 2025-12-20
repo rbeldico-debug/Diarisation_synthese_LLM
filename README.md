@@ -1,92 +1,104 @@
-# 🧠 Local AI Voice Assistant (LAVA)
+# 🧠 Local AI Voice Assistant (LAVA) - v2.0 (Docker Edition)
 
-Un assistant vocal entièrement local, modulaire et respectueux de la vie privée.
-Il combine reconnaissance vocale (Whisper), identification des locuteurs (Pyannote) et intelligence conversationnelle (LLM via Ollama), le tout orchestré en Python via multiprocessing.
+Assistant vocal local modulaire utilisant une architecture **Micro-services**. 
+L'IA lourde est isolée dans Docker pour garantir une stabilité totale des dépendances.
 
-## 📊 Architecture du Flux de Données
-
-Le système suit une architecture **Producer-Consumer** pour garantir qu'aucune donnée audio n'est perdue pendant que l'IA réfléchit.
+## 📊 Architecture du Flux
 
 ```mermaid
 graph TD
-    subgraph "PROCESS 1 : L'OREILLE (Producer)"
-        A[Microphone] -->|Flux Continu| B(VAD Engine\nSilero)
-        B -->|Analyse Ms par Ms| C{Silence > 1s ?}
-        C -- Non --> B
-        C -- Oui --> D[Création AudioPayload]
+    subgraph "HÔTE WINDOWS (Python 3.11)"
+        A[Microphone] --> B(VAD Silero)
+        B -->|Segment Audio| C[Main Process]
     end
 
-    D -->|Queue - Multiprocessing| E
-
-    subgraph "PROCESS 2 : LE CERVEAU (Consumer)"
-        E[Réception Segment] --> F[Transcriber\nFaster-Whisper]
-        E --> G[Diarizer\nPyannote 3.1]
-        
-        F -->|Texte| H[Formatter\nMemoire Glissante]
-        G -->|Speaker ID| H
-        
-        H -->|Contexte Conversation| I[LLM Client\nOllama / GPT-OSS]
-        I -->|Réponse Générée| J[Sortie Console]
+    subgraph "DOCKER (Isolé - GPU)"
+        C -->|HTTP/API| D[Speaches Server]
+        D -->|Whisper Large-v3| E(Transcription)
+        D -->|Pyannote 3.1| F(Diarization)
     end
+
+    subgraph "OLLAMA (Service Externe)"
+        C -->|HTTP/API| G[LLM - gpt-oss:20b]
+    end
+
+    E & F -->|Résultats JSON| C
+    G -->|Réponse vocale| H[Sortie Console/Audio]
 ```
 
-## 🛠️ Pré-requis Techniques
+## 🛠️ Pré-requis
 
-*   **OS** : Windows 10/11 (Recommandé avec GPU NVIDIA)
-*   **Python** : Version **3.10** à **3.12** (3.13 non supporté par PyTorch actuellement)
-*   **GPU** : NVIDIA avec 8GB+ VRAM recommandés (Testé sur RTX 4060 Ti 16GB)
-*   **Outils Externes** : 
-    *   [Ollama](https://ollama.com/) installé et tournant en tâche de fond.
+*   **OS** : Windows 10/11 avec **Docker Desktop** (WSL2 backend).
+*   **GPU** : NVIDIA RTX (drivers à jour).
+*   **Outils** : Ollama (installé sur Windows).
 
-## 🚀 Installation (Windows / NVIDIA)
+## 🚀 Installation Rapide
 
-L'installation de PyTorch avec support CUDA est délicate. Suivez cet ordre précis :
-
-1.  **Créer un environnement virtuel** :
+1.  **Préparer l'environnement Python** :
     ```bash
     python -m venv .venv
     .venv\Scripts\activate
-    ```
-
-2.  **Installer le socle PyTorch (CRITIQUE)** :
-    *Ceci garantit l'utilisation du GPU. Ne sautez pas cette étape.*
-    ```bash
-    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-    ```
-
-3.  **Installer les bibliothèques NVIDIA (Correctif DLL)** :
-    ```bash
-    pip install nvidia-cudnn-cu12 nvidia-cublas-cu12
-    ```
-
-4.  **Installer le reste des dépendances** :
-    ```bash
     pip install -r requirements.txt
     ```
 
-5.  **Configuration** :
-    *   Dupliquez le fichier `.env.example` en `.env`.
-    *   Ajoutez votre token Hugging Face (nécessaire pour Pyannote) : `HF_TOKEN=hf_...`
-    *   Acceptez les conditions d'utilisation de [Pyannote Segmentation](https://huggingface.co/pyannote/segmentation-3.0) et [Speaker Diarization](https://huggingface.co/pyannote/speaker-diarization-3.1) sur Hugging Face.
+2.  **Lancer le moteur IA (Docker)** :
+    *   Remplissez votre `HF_TOKEN` dans le fichier `docker-compose.yml`.
+    *   Dans un terminal, lancez :
+    ```bash
+    docker compose up -d
+    ```
 
-## ⚙️ Configuration (`config.py`)
+3.  **Vérifier le serveur** :
+    Accédez à [http://localhost:8000/docs](http://localhost:8000/docs). Si la page s'affiche, le moteur est prêt.
 
-Vous pouvez ajuster le comportement de l'assistant dans `config.py` :
-*   `VAD_MIN_SILENCE_DURATION_MS` : Ajuste la "patience" de l'écoute (défaut : 1000ms).
-*   `SPEAKER_MAPPING` : Renomme `SPEAKER_00` en "Utilisateur" ou "Gérald".
-*   `LLM_MODEL_NAME` : Change le modèle utilisé par Ollama (ex: `mistral`, `llama3`, `gpt-oss:20b`).
+## ⚙️ Configuration
+
+*   **Diarisation** : Automatiquement gérée par le serveur Speaches via l'argument `extra_body={"diarization": True}` dans `diarization.py`.
+*   **VRAM** : Le modèle `large-v3` consomme environ 5-6 Go de VRAM sur votre GPU via Docker.
 
 ## ▶️ Utilisation
 
-1.  Assurez-vous qu'Ollama est lancé : `ollama serve`
-2.  Lancez le programme principal :
+1.  Lancer Ollama.
+2.  Lancer le conteneur Docker (si pas déjà fait).
+3.  Exécuter le programme :
     ```bash
     python main.py
     ```
-3.  Parlez dans le micro. Appuyez sur `Ctrl+C` pour arrêter.
 
-## 🧪 Tests Unitaires
+## 💎 Avantages de la v2.0
+*   **Zéro Conflit** : Plus de problème de version NumPy ou de DLL CUDA manquantes.
+*   **Performance** : Le modèle Whisper est pré-chargé dans la VRAM par Docker, éliminant la latence de chargement au premier mot.
+*   **Portabilité** : Le code Python est devenu un simple client API ultra-léger.
 
-*   `test_step_1.py` : Teste uniquement le micro et la détection de voix (VAD). Sauvegarde les wav dans `test_segments/`.
-*   `test_step_2.py` : Teste la chaîne IA (Whisper + Diarization) sur un fichier enregistré.
+
+---
+
+### 4. Rappel du fichier `docker-compose.yml` (À placer à la racine)
+C'est le fichier qui "sauve" ton projet.
+
+```yaml
+services:
+  whisper:
+    image: ghcr.io/speaches-ai/speaches:latest-cuda
+    container_name: whisper-server
+    ports:
+      - "8000:8000"
+    volumes:
+      - hf-hub-cache:/root/.cache/huggingface/hub
+    environment:
+      - HF_TOKEN=hf_ton_token_ici
+      - WHISPER__MODEL=Systran/faster-whisper-large-v3
+      - WHISPER__DEVICE=cuda
+      - WHISPER__COMPUTE_TYPE=float16
+      - WHISPER__TTL=-1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  hf-hub-cache:
 ```

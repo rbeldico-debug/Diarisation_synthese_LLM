@@ -28,8 +28,8 @@ class MicrophoneStream:
         print(f"Microphone ouvert : {self.rate}Hz, Block={self.block_size}")
         return self
 
-    def __exit__(self, type, value, traceback):
-        """Fermeture propre du flux"""
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Fermeture propre du flux (Utilisation de noms d'arguments standards)"""
         if self.stream:
             self.stream.stop()
             self.stream.close()

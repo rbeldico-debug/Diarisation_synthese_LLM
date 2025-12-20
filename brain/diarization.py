@@ -1,78 +1,43 @@
-import os
-import torch
+# brain/diarization.py
+from openai import OpenAI
+import io
+import wave
 import numpy as np
-from pyannote.audio import Pipeline
-from pyannote.core import Annotation
-from dotenv import load_dotenv
-
-load_dotenv()
+from config import Config
 
 
 class Diarizer:
     def __init__(self):
-        self.auth_token = os.getenv("HF_TOKEN")
-        if not self.auth_token:
-            raise ValueError("❌ HF_TOKEN manquant dans le fichier .env")
+        # Connexion au serveur Speaches (Docker)
+        self.client = OpenAI(base_url=Config.WHISPER_BASE_URL, api_key="not-needed")
 
-        print("Chargement de Pyannote Pipeline...")
+    def diarize(self, audio_data: np.ndarray, sample_rate: int):
+        """Identifie les locuteurs en utilisant les attributs d'objet."""
+        buffer = io.BytesIO()
+        with wave.open(buffer, 'wb') as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(sample_rate)
+            wf.writeframes((audio_data * 32767).astype('int16').tobytes())
+        buffer.seek(0)
+
         try:
-            # On utilise le modèle 3.1 qui est le standard actuel
-            self.pipeline = Pipeline.from_pretrained(
-                "pyannote/speaker-diarization-3.1",
-                token=self.auth_token
+            response = self.client.audio.transcriptions.create(
+                model=Config.WHISPER_MODEL,
+                file=("audio.wav", buffer),
+                response_format="verbose_json"
             )
 
-            if self.pipeline is None:
-                raise ValueError("Erreur téléchargement pipeline. Vérifiez votre token HF.")
+            speakers = []
+            if hasattr(response, 'segments') and response.segments:
+                for seg in response.segments:
+                    # On accède à l'attribut .speaker directement
+                    s_id = getattr(seg, 'speaker', None)
+                    if s_id:
+                        speakers.append(s_id)
 
-            if torch.cuda.is_available():
-                self.pipeline.to(torch.device("cuda"))
-                print(f"✅ Pyannote chargé sur GPU ({torch.cuda.get_device_name(0)}).")
-            else:
-                print("⚠️ Pyannote chargé sur CPU.")
-
+                return sorted(list(set(speakers))) if speakers else [Config.DEFAULT_SPEAKER]
+            return [Config.DEFAULT_SPEAKER]
         except Exception as e:
-            print(f"❌ Erreur chargement Pyannote : {e}")
-            raise e
-
-    def diarize(self, audio_data: np.ndarray, sample_rate: int = 16000):
-        # 1. Garde-fou : Si l'audio est trop court (< 1.5s), la diarisation va échouer
-        duration = len(audio_data) / sample_rate
-        if duration < 1.5:
-            print(f"⚠️ Segment trop court pour diarisation ({duration:.2f}s < 1.5s). Ignoré.")
-            return []
-
-        # 2. Préparation des données
-        torch_data = torch.from_numpy(audio_data).float()
-        if len(torch_data.shape) == 1:
-            torch_data = torch_data.unsqueeze(0)
-
-        inputs = {"waveform": torch_data, "sample_rate": sample_rate}
-
-        try:
-            # 3. Exécution
-            output = self.pipeline(inputs)
-
-            # 4. Gestion robuste du format de sortie
-            # Parfois Pyannote peut renvoyer un objet wrapper au lieu de l'Annotation directe
-            if not isinstance(output, Annotation):
-                if hasattr(output, "annotation"):
-                    output = output.annotation
-                else:
-                    # Cas de débogage si le format est inconnu
-                    # print(f"DEBUG: Type de sortie inattendu: {type(output)}")
-                    return []
-
-            results = []
-            for turn, _, speaker in output.itertracks(yield_label=True):
-                results.append({
-                    "start": turn.start,
-                    "end": turn.end,
-                    "speaker": speaker
-                })
-            return results
-
-        except Exception as e:
-            # On ne veut pas crasher tout le programme si la diarisation échoue
-            print(f"❌ Erreur lors du process diarization : {e}")
-            return []
+            print(f"[Cerveau] ⚠️ Erreur Diarisation : {e}")
+            return [Config.DEFAULT_SPEAKER]
