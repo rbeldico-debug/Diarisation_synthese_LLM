@@ -1,0 +1,4 @@
+/.venv
+.env
+/test_segments
+/.idea
