@@ -1,16 +1,18 @@
-# main.py (Imports nettoyés)
+# main.py
 import multiprocessing
 import queue
 import time
 import numpy as np
 
-# Patch NumPy pour compatibilité ascendante
+# Patch NumPy pour compatibilité (nécessaire pour certains environnements Windows/Pyannote)
 if not hasattr(np, "NaN"):
     np.NaN = np.nan
 
 from ears.microphone import MicrophoneStream
 from ears.vad_engine import VADSegmenter
 from config import Config
+from output.speaker import mouth_worker  # Import du nouveau worker P3
+
 
 def ear_process(audio_queue: multiprocessing.Queue, stop_event: multiprocessing.Event):
     """
@@ -18,7 +20,6 @@ def ear_process(audio_queue: multiprocessing.Queue, stop_event: multiprocessing.
     """
     print(f"[Oreille] Initialisation VAD (Silence min: {Config.VAD_MIN_SILENCE_DURATION_MS}ms)...")
 
-    # Instanciation avec les paramètres de la Config
     vad = VADSegmenter(
         sample_rate=Config.SAMPLE_RATE,
         threshold=Config.VAD_THRESHOLD,
@@ -28,15 +29,12 @@ def ear_process(audio_queue: multiprocessing.Queue, stop_event: multiprocessing.
     print("[Oreille] Prête. Parlez !")
 
     try:
-        # Utilisation de Config.SAMPLE_RATE, etc.
         with MicrophoneStream(rate=Config.SAMPLE_RATE, block_size=Config.BLOCK_SIZE) as mic:
             for chunk in mic.generator():
                 if stop_event.is_set():
                     break
 
-                # Traitement VAD
                 payload = vad.process_chunk(chunk)
-
                 if payload:
                     print(f"[Oreille] 🎤 Phrase détectée ({payload.duration_seconds:.2f}s) -> Envoi au Cerveau.")
                     audio_queue.put(payload)
@@ -47,16 +45,13 @@ def ear_process(audio_queue: multiprocessing.Queue, stop_event: multiprocessing.
         print("[Oreille] Arrêt.")
 
 
-def brain_process(audio_queue: multiprocessing.Queue, stop_event: multiprocessing.Event):
-    """Processus P2 : Consomme les segments audio et coordonne l'IA."""
-    from brain.transcription import Transcriber
-    from brain.diarization import Diarizer
+def brain_process(audio_queue: multiprocessing.Queue, tts_queue: multiprocessing.Queue,
+                  stop_event: multiprocessing.Event):
+    from brain.inference_client import InferenceClient
     from brain.llm_client import LLMClient
     from output.formatter import DialogueFormatter
 
-    # Initialisation des ouvriers
-    transcriber = Transcriber()
-    diarizer = Diarizer()
+    inference = InferenceClient()
     llm = LLMClient()
     formatter = DialogueFormatter()
 
@@ -68,62 +63,91 @@ def brain_process(audio_queue: multiprocessing.Queue, stop_event: multiprocessin
         except queue.Empty:
             continue
 
-        # 1. Transcription & Diarisation (via Docker)
-        text = transcriber.transcribe(payload.audio_data, payload.sample_rate)
+        # --- DÉBUT DU CHRONO ICI ---
+        t0 = time.perf_counter()
 
-        speakers = ["Utilisateur"]
-        if payload.duration_seconds > Config.MIN_DURATION_FOR_DIARIZATION:
-            speakers = diarizer.diarize(payload.audio_data, payload.sample_rate)
+        # 1. Transcription
+        text, speakers = inference.process_audio(payload.audio_data, payload.sample_rate)
+        t_transcription = time.perf_counter() - t0
 
-        # 2. Formatage du tour de parole
+        if not text.strip() or len(text.strip()) <= 2:
+            continue
+
+        # 2. Réflexion & Réponse LLM (UN SEUL APPEL)
+        context = formatter.get_context_string()
+        print(f"🤖 Assistant réfléchit (Transcription en {t_transcription:.2f}s)...", end="\r")
+
+        t_llm_start = time.perf_counter()
+        response = llm.query(context, text)
+        t_llm = time.perf_counter() - t_llm_start
+
+        # Latence totale avant le début de la parole
+        total_latency = time.perf_counter() - t0
+        print(f"\n[Stats] Transcription: {t_transcription:.2f}s | LLM: {t_llm:.2f}s | Total: {total_latency:.2f}s")
+
+        # 3. Envoi à la bouche
+        tts_queue.put(response)
+
+        # Mise à jour historique
         display_line = formatter.process_turn(text, speakers)
-        print(f"\n{display_line}")
-
-        # 3. Réflexion & Réponse LLM
-        # On ne répond que si le texte n'est pas vide et si c'est l'utilisateur qui parle
-        if len(text.strip()) > 2:
-            context = formatter.get_context_string()
-            print("🤖 Assistant réfléchit...", end="\r")
-
-            response = llm.query(context, text)
-
-            # On ajoute la réponse de l'IA à l'historique
-            formatter.process_turn(response, ["Assistant"])
-            print(f"🤖 Assistant: {response}")
+        formatter.process_turn(response, ["SPEAKER_01"])
+        print(f"🤖 Assistant: {response}")
 
 
 if __name__ == "__main__":
     # Protection obligatoire pour Windows
     multiprocessing.freeze_support()
 
-    print("--- DÉMARRAGE DU SYSTÈME MULTI-AGENTS ---")
+    print("--- DÉMARRAGE DU SYSTÈME GÉRALD V2 (Full-Duplex) ---")
     print("Ctrl+C pour arrêter.")
 
-    # Création des outils de communication inter-processus
-    # La Queue sert de tuyau entre l'Oreille et le Cerveau
-    main_queue = multiprocessing.Queue()
-    stop_signal = multiprocessing.Event()
+    # 1. Création des canaux de communication
+    main_queue = multiprocessing.Queue()  # Flux : Oreille -> Cerveau
+    tts_queue = multiprocessing.Queue()  # Flux : Cerveau -> Bouche
+    stop_signal = multiprocessing.Event()  # Signal d'arrêt global
 
-    # Création des processus
-    p_ear = multiprocessing.Process(target=ear_process, args=(main_queue, stop_signal))
-    p_brain = multiprocessing.Process(target=brain_process, args=(main_queue, stop_signal))
+    # 2. Définition des processus (P1, P2, P3)
+    p_ear = multiprocessing.Process(
+        target=ear_process,
+        args=(main_queue, stop_signal),
+        name="Oreille"
+    )
+    p_brain = multiprocessing.Process(
+        target=brain_process,
+        args=(main_queue, tts_queue, stop_signal),
+        name="Cerveau"
+    )
+    p_mouth = multiprocessing.Process(
+        target=mouth_worker,
+        args=(tts_queue, stop_signal),
+        name="Bouche"
+    )
 
-    # Lancement
-    p_brain.start()  # On lance le cerveau d'abord pour qu'il charge
+    # 3. Lancement des processus
+    # On lance la bouche et le cerveau en premier car ils ont des temps de chargement
+    p_mouth.start()
+    p_brain.start()
     p_ear.start()
 
     try:
         while True:
             time.sleep(1)
-            # Vérifie si les processus sont toujours vivants
-            if not p_ear.is_alive() or not p_brain.is_alive():
+            # Surveillance de l'état des processus
+            if not p_ear.is_alive() or not p_brain.is_alive() or not p_mouth.is_alive():
                 print("⚠️ Un processus s'est arrêté inopinément.")
                 break
     except KeyboardInterrupt:
         print("\n🛑 Arrêt demandé par l'utilisateur...")
     finally:
-        # Arrêt propre
+        # Arrêt propre et synchronisé
         stop_signal.set()
-        p_ear.join()
-        p_brain.join()
+
+        # On vide les queues pour débloquer les processus en attente si nécessaire
+        while not main_queue.empty(): main_queue.get()
+        while not tts_queue.empty(): tts_queue.get()
+
+        p_ear.join(timeout=2)
+        p_brain.join(timeout=2)
+        p_mouth.join(timeout=2)
+
         print("--- SYSTÈME ÉTEINT ---")

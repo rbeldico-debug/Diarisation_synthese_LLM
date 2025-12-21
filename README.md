@@ -81,16 +81,19 @@ services:
   whisper:
     image: ghcr.io/speaches-ai/speaches:latest-cuda
     container_name: whisper-server
+    restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
-      - hf-hub-cache:/root/.cache/huggingface/hub
+      - whisper_data:/home/ubuntu/.cache/huggingface
     environment:
-      - HF_TOKEN=hf_ton_token_ici
+      - HF_TOKEN=[Clé HuggingFace]
+      - HF_HOME=/home/ubuntu/.cache/huggingface
+      - SPEACHES_MODELS_PRELOAD=Systran/faster-whisper-large-v3
       - WHISPER__MODEL=Systran/faster-whisper-large-v3
       - WHISPER__DEVICE=cuda
-      - WHISPER__COMPUTE_TYPE=float16
-      - WHISPER__TTL=-1
+      - WHISPER__COMPUTE_TYPE=int8_float16
+      - WHISPER__NUM_WORKERS=4
     deploy:
       resources:
         reservations:
@@ -99,6 +102,7 @@ services:
               count: all
               capabilities: [gpu]
 
+# CETTE SECTION EST OBLIGATOIRE POUR ÉVITER L'ERREUR "UNDEFINED VOLUME"
 volumes:
-  hf-hub-cache:
+  whisper_data:
 ```

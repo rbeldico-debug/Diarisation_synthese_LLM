@@ -11,19 +11,21 @@ class Config:
     SAMPLE_RATE = 16000
     BLOCK_SIZE = 512
     VAD_THRESHOLD = 0.5
-    VAD_MIN_SILENCE_DURATION_MS = 1000
+    # ADR-005 : Réduction à 500ms pour plus de réactivité
+    VAD_MIN_SILENCE_DURATION_MS = 500
+    TTS_SAMPLE_RATE = 16000  # Piper standard
 
     # --- SERVEUR IA (Docker Speaches) ---
-    # L'URL pointe vers le conteneur Docker sur le port 8000
     WHISPER_BASE_URL = "http://localhost:8000/v1"
     WHISPER_MODEL = "Systran/faster-whisper-large-v3"
 
     # --- LLM (Ollama) ---
     LLM_BASE_URL = "http://localhost:11434/v1"
-    LLM_MODEL_NAME = "gpt-oss:20b"  # Ou deepseek-r1 / llama3
+    LLM_MODEL_NAME = "gpt-oss:20b"
 
     # --- LOGIQUE MÉTIER ---
-    MIN_DURATION_FOR_DIARIZATION = 1.5
+    # ADR-004 : On garde ce seuil pour décider si on affiche le locuteur
+    MIN_DURATION_FOR_DIARIZATION = 1.0
     MAX_HISTORY_TURNS = 10
     SPEAKER_MAPPING = {
         "SPEAKER_00": "Utilisateur",
@@ -32,7 +34,8 @@ class Config:
     DEFAULT_SPEAKER = "Utilisateur"
 
     SYSTEM_PROMPT = (
-        "Tu es une IA assistante vocale nommée Gérald. "
-        "Réponds de manière directe et concise. Pas de listes à puces. "
-        "Fais des phrases courtes et naturelles pour une synthèse vocale."
+        "Tu es Gérald, un assistant vocal intelligent et réactif. "
+        "Tu t'adresses à l'utilisateur directement par la voix. "
+        "Fais des réponses très courtes (2 phrases maximum), pas de listes, "
+        "sois naturel comme dans une vraie conversation."
     )

@@ -1,8 +1,13 @@
 # --- Flux Audio & VAD (Local - Compatible Python 3.13) ---
 # pip install torch torchaudio --extra-index-url https://download.pytorch.org/whl/cu121
+# --- Flux Audio & VAD ---
 openai
 python-dotenv
 sounddevice
 numpy==1.26.4
 torch
 packaging
+
+# --- Synthèse Vocale (P3) ---
+piper-tts==1.2.0
+pygame==2.5.2
