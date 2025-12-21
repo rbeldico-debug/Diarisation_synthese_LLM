@@ -8,22 +8,23 @@ L'IA lourde est isolée dans Docker pour garantir une stabilité totale des dép
 ```mermaid
 graph TD
     subgraph "HÔTE WINDOWS (Python 3.11)"
-        A[Microphone] --> B(VAD Silero)
-        B -->|Segment Audio| C[Main Process]
+        A[Microphone] --> B(P1: Oreille - Silero VAD)
+        B -->|Segment Audio| C(P2: Cerveau - Orchestrateur)
+        C -->|Texte + Intent| D[(Journal.jsonl - Journaling)]
+        D --> E(P4: Analyste - Synthèse)
+        E -->|Markdown| F[Dashboard.md - Zettelkasten]
+        C -->|Texte Réponse| G(P3: Bouche - Piper TTS)
     end
 
     subgraph "DOCKER (Isolé - GPU)"
-        C -->|HTTP/API| D[Speaches Server]
-        D -->|Whisper Large-v3| E(Transcription)
-        D -->|Pyannote 3.1| F(Diarization)
+        C -->|API| H[Speaches: Whisper + Diarization]
+        C -->|API| I[Router: Llama 1B]
     end
 
     subgraph "OLLAMA (Service Externe)"
-        C -->|HTTP/API| G[LLM - gpt-oss:20b]
+        C -->|API| J[LLM Principal: gpt-oss-20b]
+        E -->|API| J
     end
-
-    E & F -->|Résultats JSON| C
-    G -->|Réponse vocale| H[Sortie Console/Audio]
 ```
 
 ## 🛠️ Pré-requis
@@ -77,6 +78,8 @@ graph TD
 C'est le fichier qui "sauve" ton projet.
 
 ```yaml
+name: Diarisation_Synthese_LLM
+
 services:
   whisper:
     image: ghcr.io/speaches-ai/speaches:latest-cuda
@@ -87,7 +90,7 @@ services:
     volumes:
       - whisper_data:/home/ubuntu/.cache/huggingface
     environment:
-      - HF_TOKEN=[Clé HuggingFace]
+      - HF_TOKEN=[VOTRE CLE API]
       - HF_HOME=/home/ubuntu/.cache/huggingface
       - SPEACHES_MODELS_PRELOAD=Systran/faster-whisper-large-v3
       - WHISPER__MODEL=Systran/faster-whisper-large-v3
@@ -102,7 +105,23 @@ services:
               count: all
               capabilities: [gpu]
 
-# CETTE SECTION EST OBLIGATOIRE POUR ÉVITER L'ERREUR "UNDEFINED VOLUME"
+  router-llm:
+    image: ollama/ollama:latest
+    container_name: LLM-router
+    restart: unless-stopped
+    ports:
+      - "11435:11434"
+    volumes:
+      - ollama_storage:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
 volumes:
   whisper_data:
+  ollama_storage:
 ```

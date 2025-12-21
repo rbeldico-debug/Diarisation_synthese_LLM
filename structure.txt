@@ -1,20 +1,22 @@
+--- START OF FILE structure.txt ---
 project_root/
 │
-├── main.py                    # Orchestration (Oreille <-> Cerveau)
-├── config.py                  # Seuils VAD et URLs API (8000 pour Whisper, 11434 pour Ollama)
-├── .env                       # HF_TOKEN et clés privées
-├── docker-compose.yml         # CONFIGURATION DU SERVEUR IA (Whisper + Diarization)
+├── main.py                    # Orchestration P1, P2, P3, P4
+├── config.py                  # Prompts de l'Analyste et du Router
 │
-├── core/
-│   └── data_models.py         # Payload AudioPayload
+├── brain/                     # L'ESPRIT RÉACTIF
+│   ├── router.py              # Petit modèle (Llama 1B) : Répondre ou Écouter ?
+│   └── llm_client.py          # Gros modèle (GPT-OSS) : Conversation
 │
-├── ears/
-│   ├── microphone.py          # Capture SoundDevice
-│   └── vad_engine.py          # Silero VAD (léger, local)
+├── analyst/                   # L'ESPRIT ANALYTIQUE (Processus P4)
+│   ├── synthesizer.py         # Lit le journal -> Génère le Markdown
+│   └── templates.py           # Structure du Markdown (Titres, Bullet points)
 │
-├── brain/
-│   ├── transcription.py       # Client API pour le serveur Docker
-│   └── diarization.py         # Client API (Speaker ID via Docker)
+├── memory/                    # LA PERSISTANCE (Le "Coffre-fort")
+│   ├── storage_manager.py     # Gère l'écriture simultanée JSONL / MD
+│   ├── journal.jsonl          # La source de vérité brute (Machine)
+│   └── dashboard.md           # Ce que tu affiches sur ton 2ème écran (Humain)
 │
-└── output/
-    └── formatter.py           # Historique et mise en forme du dialogue
+└── output/                    # LES SORTIES
+    └── speaker.py             # TTS (La Bouche)
+--- END OF FILE structure.txt ---

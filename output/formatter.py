@@ -31,19 +31,15 @@ class DialogueFormatter:
 
         return formatted_line
 
-    def _resolve_speaker(self, speakers: list) -> str:
+    @staticmethod
+    def _resolve_speaker(speakers: list) -> str:
         """
-        Logique pour déterminer le nom à afficher.
+        Détermine le nom à afficher (Statique pour corriger l'alerte PyCharm).
         """
-        # Cas 1: Aucun speaker détecté ou liste vide -> Default (ou on reprend le dernier ?)
         if not speakers or speakers == ['?']:
             return Config.DEFAULT_SPEAKER
 
-        # Cas 2: On prend le premier speaker détecté (souvent le principal dans une phrase)
-        # Pyannote peut en trouver plusieurs si chevauchement.
         raw_speaker = speakers[0]
-
-        # Mapping vers un nom réel (défini dans Config)
         return Config.SPEAKER_MAPPING.get(raw_speaker, raw_speaker)
 
     def get_context_string(self) -> str:

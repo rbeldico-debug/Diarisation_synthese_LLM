@@ -11,3 +11,5 @@ packaging
 # --- Synthèse Vocale (P3) ---
 piper-tts==1.2.0
 pygame==2.5.2
+edge-tts
+asyncio
