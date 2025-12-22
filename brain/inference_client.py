@@ -43,25 +43,25 @@ class InferenceClient:
             print(f"[STT] ❌ Échec critique du préchauffage : {e}")
 
     def process_audio(self, audio_data: np.ndarray, sample_rate: int):
-        """Effectue une requête pour obtenir texte + locuteurs."""
+        """Effectue une requête pour obtenir texte + locuteurs en forçant le Français."""
         buffer = io.BytesIO()
         with wave.open(buffer, 'wb') as wf:
             wf.setnchannels(1)
             wf.setsampwidth(2)
             wf.setframerate(sample_rate)
-            # Conversion float32 -> int16
             wf.writeframes((audio_data * 32767).astype('int16').tobytes())
         buffer.seek(0)
 
         try:
+            # Ajout du paramètre language="fr" pour éviter les bascules en anglais
             response = self.client.audio.transcriptions.create(
                 model=Config.WHISPER_MODEL,
                 file=("audio.wav", buffer),
-                response_format="verbose_json"
+                response_format="verbose_json",
+                language="fr" # <--- FORCE LE FRANÇAIS ICI
             )
 
             text = response.text
-            # Extraction sécurisée des speakers (ADR-004)
             speakers = []
             if hasattr(response, 'segments'):
                 for seg in response.segments:

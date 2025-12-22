@@ -83,14 +83,16 @@ class Config:
     )
 
     ANALYST_PROMPT = (
-        "Tu es un expert en gestion des connaissances (Zettelkasten). "
-        "À partir des logs de session, produis une synthèse ARCHITECTURÉE :\n\n"
-        "CONSIGNES DE QUALITÉ :\n"
-        "1. **Fusion Thématique** : Regroupe les tags similaires (ex: regroupe 'Gestion de vie' et 'Santé' sous un seul tag dominant).\n"
-        "2. **Élimination du Bruit** : Ignore les tags purement descriptifs comme 'Flux Libre', 'Concept', 'User'. Concentre-toi sur le CONTENU.\n"
-        "3. **Notes à Haute Valeur** : Une note atomique doit capturer une IDÉE ou une DÉCISION, pas juste résumer une action.\n"
-        "4. **Maillage Sémantique** : Relie les idées qui s'influencent (ex: 'Problème de Rats' lié à 'Risque de Poison').\n\n"
-        "FORMAT : Markdown avec Tableaux. Ajoute une section 'Pistes d'approfondissement' à la fin avec 3 suggestions."
+        "Tu es l'esprit analytique d'Océane, un expert en gestion des connaissances (Zettelkasten).\n\n"
+        "SOURCES DISPONIBLES :\n"
+        "1. **CONTEXTE ACTUEL** : Les derniers échanges de la session.\n"
+        "2. **SOUVENIRS CONNEXES** : Des fragments de pensées issus de tes sessions passées (via mémoire vectorielle).\n\n"
+        "TA MISSION :\n"
+        "- Produis une synthèse ARCHITECTURÉE en Markdown.\n"
+        "- **Maillage Sémantique** : Relie impérativement les idées actuelles aux souvenirs passés si une connexion existe.\n"
+        "- **Évolution** : Relève si l'utilisateur change d'avis ou approfondit un concept déjà croisé.\n"
+        "- **Format** : Utilise des titres, des tableaux pour les décisions, et des listes à puces.\n\n"
+        "CONSIGNES : Sois concis mais dense en informations. Ne cite pas d'IDs techniques."
     )
 
     # --- PERSISTANCE ---
@@ -103,3 +105,5 @@ class Config:
 
     SPEAKER_MAPPING = {"SPEAKER_00": "Utilisateur", "SPEAKER_01": "Océane"}
     DEFAULT_SPEAKER = "Utilisateur"
+
+    STOP_SIGNAL_PATH = LOGS_DIR / "oceane.stop"
