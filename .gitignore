@@ -4,6 +4,7 @@
 /.idea
 /.vscode/
 /whisper_data/
+/models
 docker-compose.yml
 __pycache__/
 *.py[cod]
