@@ -18,44 +18,58 @@ from memory.storage_manager import MemoryManager
 
 
 def analyst_process(stop_event: multiprocessing.Event, tts_queue: multiprocessing.Queue):
-    """P4 : Analyste + Oracle Vocal (Avec monitoring console forcé)"""
+    """P4 : Analyste + Oracle Vocal + Bibliothécaire"""  # <--- Updated docstring
     from analyst.synthesizer import Synthesizer
     from memory.storage_manager import MemoryManager
+    from memory.librarian import Librarian  # <--- Nouvel import
+    import time
 
     synther = Synthesizer()
     memory = MemoryManager()
+    librarian = Librarian()  # <--- Instanciation
 
     last_vocal_brief = time.time()
-    VOCAL_INTERVAL = 300
+    VOCAL_INTERVAL = 120
 
     print(f"[Analyste] ✅ Prêt. Session : {Config.SESSION_ID}")
 
-    # --- GÉNÉRATION INITIALE ---
-    content = synther.generate_summary()
-    memory.update_dashboard(content)
-    print(f"[Analyste] 🚀 Dashboard initial généré.")
-    sys.stdout.flush()
-
     while not stop_event.is_set():
+        # ... (Boucle d'attente inchangée) ...
         for _ in range(Config.ANALYST_UPDATE_INTERVAL_SECONDS):
             if stop_event.is_set(): return
             time.sleep(1)
 
-        # Mise à jour régulière
-        content = synther.generate_summary()
-        memory.update_dashboard(content)
+        # 1. GÉNÉRATION
+        dashboard_md, concepts = synther.generate_summary()
 
-        # --- LOG CONSOLE (FORCÉ) ---
+        # 2. UPDATE DASHBOARD
+        memory.update_dashboard(dashboard_md)
         timestamp = datetime.now().strftime("%H:%M:%S")
-        print(f"[Analyste] 📝 {timestamp} : Mise à jour Dashboard effectuée.")
+        print(f"[Analyste] 📝 {timestamp} : Dashboard mis à jour.")
+
+        # 3. TRAITEMENT INTELLIGENT DES CONCEPTS (Librarian)
+        if concepts:
+            print(f"[Analyste] 💎 {len(concepts)} concepts candidats. Le Bibliothécaire analyse...")
+            for concept in concepts:
+                if stop_event.is_set(): break
+                try:
+                    # On délègue tout au Bibliothécaire
+                    librarian.process_concept(
+                        title=concept['title'],
+                        content=concept['content'],
+                        tags=concept['tags']
+                    )
+                    time.sleep(0.5)
+                except Exception as e:
+                    print(f"[Analyste] ⚠️ Erreur Librarian sur '{concept.get('title')}': {e}")
+
         sys.stdout.flush()
 
-        # Briefing vocal
+        # 4. BRIEFING VOCAL (Reste inchangé)
         now = time.time()
         if now - last_vocal_brief >= VOCAL_INTERVAL:
-            print("[Analyste] 🧠 Génération du briefing vocal...")
-            sys.stdout.flush()
-            brief = synther.generate_vocal_brief(content)
+            # ... (Code existant du briefing vocal)
+            brief = synther.generate_vocal_brief(dashboard_md)
             if brief:
                 tts_queue.put(brief)
                 last_vocal_brief = now
@@ -160,28 +174,24 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         s_ev.set()
     finally:
-        # --- ARCHIVAGE FINAL ULTRA-RAPIDE (Sans appel LLM) ---
+        # --- ARCHIVAGE FINAL ---
         print("\n" + "-" * 30)
         print("[Main] 📂 Archivage de la session...")
         try:
-            if Config.DASHBOARD_PATH.exists():
-                with open(Config.DASHBOARD_PATH, "r", encoding="utf-8") as f:
+            # On essaie de lire le backup local créé par MemoryManager
+            backup_path = Config.LOGS_DIR / "dashboard_backup.md"
+
+            if backup_path.exists():
+                with open(backup_path, "r", encoding="utf-8") as f:
                     content = f.read()
 
                 m = MemoryManager()
-                # On crée la note directement avec le dernier contenu connu du dashboard
-                note_id = m.create_atomic_note(content, ["ARCHIVE_SESSION", Config.SESSION_ID])
-                print(f"[Main] ✅ Note archivée : zettelkasten/{note_id}.md")
+                # On archive dans le Zettelkasten via le Bridge
+                # Note: On utilise create_atomic_note pour garder la cohérence
+                archive_name = f"Session_Archive_{Config.SESSION_ID}"
+                m.create_atomic_note(archive_name, content, ["ARCHIVE_SESSION"])
+                print(f"[Main] ✅ Session archivée sous : {archive_name}")
             else:
-                print("[Main] ⚠️ Dashboard introuvable, archive non créée.")
+                print("[Main] ⚠️ Backup local introuvable, archivage ignoré.")
         except Exception as e:
             print(f"[Main] ⚠️ Erreur archivage : {e}")
-
-        # Suppression du signal et fermeture
-        if Config.STOP_SIGNAL_PATH.exists(): Config.STOP_SIGNAL_PATH.unlink()
-        for p in processes:
-            p.join(timeout=0.5)
-            if p.is_alive(): p.terminate()
-
-        print("--- SYSTÈME ÉTEINT PROPREMENT ---")
-        sys.stdout.flush()

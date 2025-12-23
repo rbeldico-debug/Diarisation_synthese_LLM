@@ -1,7 +1,21 @@
-# 🧠 Local AI Voice Assistant (LAVA) - v2.0 (Docker Edition)
+# 🌊 Océane - Assistant de Réflexion Sémantique (v2.5)
 
-Assistant vocal local modulaire utilisant une architecture **Micro-services**. 
-L'IA lourde est isolée dans Docker pour garantir une stabilité totale des dépendances.
+Océane est un écosystème multi-agents local conçu pour transformer vos réflexions orales en un **Zettelkasten** structuré dans Obsidian.
+
+## 🏗️ Architecture des Agents
+1. **P1: L'Oreille** (Silero VAD) : Découpe le flux audio en segments logiques.
+2. **P2: Le Cerveau** (Whisper + Semantic Router) : Transcrit, identifie les locuteurs et classe les intentions via **Similarité Cosinus** (pas de LLM pour le tri, 100% fiable).
+3. **P3: La Bouche** (Edge-TTS) : Restitue des briefings vocaux haute fidélité (Voix: Vivienne).
+4. **P4: L'Analyste** (Mistral-Nemo + RAG) : Analyse le journal JSONL, interroge **ChromaDB** pour retrouver des souvenirs passés, et sculpte le Dashboard Obsidian.
+
+## 🧠 Fonctions Avancées
+- **Similarité Sémantique** : Plus d'hallucination de tags. Le système compare mathématiquement vos propos à la Taxonomie Universelle.
+- **RAG (Retrieval Augmented Generation)** : L'analyste crée des liens `[[WikiLinks]]` entre vos propos actuels et vos réflexions des sessions précédentes.
+- **Zettelkasten Automatique** : À chaque arrêt, une note atomique formatée est archivée dans votre Vault Obsidian.
+
+## 🛠️ Maintenance & Commandes
+- **Démarrage** : `execute.bat` (Lance Docker Whisper, ChromaDB, Ollama et le script Main).
+- **Arrêt propre** : `python stop.py` (Déclenche l'archivage final et coupe les processus).
 
 ## 📊 Architecture du Flux
 
@@ -81,6 +95,7 @@ C'est le fichier qui "sauve" ton projet.
 name: Diarisation_Synthese_LLM
 
 services:
+  # --- MOTEUR AUDIO (Whisper) ---
   whisper:
     image: ghcr.io/speaches-ai/speaches:latest-cuda
     container_name: whisper-server
@@ -90,7 +105,7 @@ services:
     volumes:
       - whisper_data:/home/ubuntu/.cache/huggingface
     environment:
-      - HF_TOKEN=[VOTRE CLE API]
+      - HF_TOKEN=[CLE API ICI]
       - HF_HOME=/home/ubuntu/.cache/huggingface
       - SPEACHES_MODELS_PRELOAD=Systran/faster-whisper-large-v3
       - WHISPER__MODEL=Systran/faster-whisper-large-v3
@@ -105,6 +120,7 @@ services:
               count: all
               capabilities: [gpu]
 
+  # --- LE CERVEAU UNIQUE (Ollama: Nemo + Embeddings) ---
   router-llm:
     image: ollama/ollama:latest
     container_name: LLM-router
@@ -121,7 +137,21 @@ services:
               count: all
               capabilities: [gpu]
 
+  # --- LA MÉMOIRE VECTORIELLE (ChromaDB) ---
+  chromadb:
+    image: ghcr.io/chroma-core/chroma:latest
+    container_name: chromadb-server
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma # Volume persistant pour le RAG
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+
 volumes:
   whisper_data:
   ollama_storage:
+  chroma_data:
 ```

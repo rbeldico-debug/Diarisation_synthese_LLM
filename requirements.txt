@@ -7,10 +7,12 @@ sounddevice
 numpy==1.26.4
 torch
 packaging
-
+# --- Vecteur & Maths ---
+chromadb
+# --- HTTP Client (Obsidian Bridge) ---
+httpx
+urllib3
 # --- Synthèse Vocale (P3) ---
-piper-tts==1.2.0
 pygame==2.5.2
 edge-tts
 asyncio
-

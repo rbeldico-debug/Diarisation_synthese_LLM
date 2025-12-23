@@ -53,7 +53,7 @@ class IntentRouter:
 
         # --- RÉGLAGE DE LA PRÉCISION ---
         # On passe le seuil de 0.35 à 0.45 ou 0.50 pour être plus sélectif
-        THRESHOLD = 0.45
+        THRESHOLD = 0.55
 
         results = [f"[{self.taxonomy[i]}]" for i in best_indices if similarities[i] > THRESHOLD]
 
