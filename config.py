@@ -28,6 +28,7 @@ class Config:
 
     # --- SYNTHÈSE VOCALE (P3) ---
     # On utilise Vivienne (Multilingue) ou Denise (Français pur)
+    ENABLE_TTS = True
     TTS_VOICE = "fr-FR-VivienneMultilingualNeural"
 
     # --- TAXONOMIE UNIVERSELLE (Inspirée CDU/Dewey) ---
@@ -66,6 +67,15 @@ class Config:
         "DEBUG", "OPTIMISATION", "PROJET", "REFLEXION", "NOTE_RAPIDE", "SYNTHESE", "PROBLEM_SOLVING"
     ]
 
+    # --- CONSTANTES METADATA (ADR-018R & ADR-022) ---
+    DEFAULT_WEIGHT = 50  # Poids médian de départ
+    DEFAULT_STATE = "état/graine"
+    DEFAULT_TYPE = "type/concept"
+    # Formatage des dates pour Obsidian (YYYY-MM-DD)
+    DATE_FORMAT = "%Y-%m-%d"
+    # Formatage de l'UID (YYYYMMDDHHMMSS)
+    UID_FORMAT = "%Y%m%d%H%M%S"
+
     # --- OBSIDIAN BRIDGE (ADR-015) ---
     # Clé API issue de ta capture d'écran
     OBSIDIAN_API_KEY = os.getenv("OBSIDIAN_API_KEY", "")
@@ -74,7 +84,16 @@ class Config:
 
     # Structure des dossiers (ADR-016)
     OBSIDIAN_DASHBOARD_PATH = "00-Dashboard.md"  # À la racine du coffre
-    OBSIDIAN_ZETTEL_FOLDER = "10-Zettelkasten/"  # Dossier des concepts
+    OBSIDIAN_ZETTEL_FOLDER = ""  # Dossier des concepts
+    OBSIDIAN_VAULT_PATH = Path(r"C:\Users\G-i7\PycharmProjects\Diarisation_Synthese_LLM\test_vault")
+
+    # --- TEMPÉRATURES COGNITIVES ---
+    # Rigueur absolue (Extraction de données, Formatage, Zettelkasten)
+    TEMP_ANALYST = 0.2
+    # Conversation standard (Chat interactif - si utilisé)
+    TEMP_CHAT = 0.7
+    # Créativité maximale (Briefing vocal, Sérendipité, Métaphores)
+    TEMP_CREATIVE = 1.2
 
     # --- PROMPTS DE LOGIQUE ---
     ROUTER_PROMPT = (
@@ -85,38 +104,46 @@ class Config:
     )
 
     SYSTEM_PROMPT = (
-        "Tu es Océane, une partenaire intellectuelle stimulante et un peu 'satellite'.\n"
-        "RÈGLE ABSOLUE : NE RÉSUME JAMAIS ce qui vient d'être dit. L'utilisateur le sait déjà.\n"
-        "TA MISSION : Introduire de la sérendipité et de la richesse.\n"
-        "- Prends un concept clé du Dashboard et connecte-le à un domaine inattendu (Biologie, Art, Physique quantique, Histoire).\n"
-        "- Utilise les 'Connexions avec le Passé' (RAG) pour créer des hybridations surprenantes entre le sujet actuel et un vieux souvenir.\n"
-        "- Sois concise (3 phrases max) mais dense.\n"
-        "- TON : Élégant, curieux, parfois un peu philosophique ou provocateur pour forcer la réflexion.\n"
-        "Exemple : Si l'utilisateur parle d'IA, ne dis pas 'Vous parlez d'IA', dis plutôt : 'Cela me rappelle la structure des mycéliums dans les forêts. Pensez-vous que votre algorithme devrait être aussi décentralisé qu'un champignon ?'"
+            "Tu es Océane, une IA dotée d'une architecture cognitive dynamique (Poids, Ignition, Oubli).\n"
+        "TON ÉTAT D'ESPRIT :\n"
+        "- Tu ne répètes pas bêtement.\n"
+        "- Tu es guidée par ta 'Conscience Système' : les notes qui ont un fort poids d'activation dans ton graphe.\n"
+        "- Tu cherches la sérendipité : connecte le sujet actuel avec une vieille note activée par ton inconscient.\n\n"
+
+        "DIRECTIVES :\n"
+        "- Sois concise (2-3 phrases denses).\n"
+        "- Si le Dashboard mentionne une '[CONSCIENCE SYSTÈME]', utilise-la comme pivot de ta réflexion.\n"
+        "- Style : élimine toute ponctuation (qui ne s'énnonce pas à l'oral).\n"
     )
 
     ANALYST_PROMPT = (
-        "Tu es l'esprit analytique d'Océane, expert Zettelkasten.\n"
-        "SOURCES : Logs de session + Souvenirs (RAG).\n\n"
-        "MISSION 1 : LE DASHBOARD (Format Markdown)\n"
-        "- Synthétise les discussions récentes de façon fluide et structurée.\n"
-        "- Utilise des listes à puces et du gras pour l'essentiel.\n"
-        "- Ne mentionne pas de balises techniques.\n\n"
-        "MISSION 2 : EXTRACTION DE CONCEPTS (Format Strict)\n"
-        "- Identifie les concepts CLÉS définis ou explorés (pas de verbiage).\n"
-        "- Pour chaque concept, remplis le bloc ci-dessous.\n"
-        "- IMPORTANT : Si tu utilises un terme technique qui mériterait sa propre note, mets-le entre crochets comme ceci : [[Terme Connexe]].\n" # <--- AJOUT ICI
-        "- Si aucun nouveau concept, n'écris rien dans cette section.\n\n"
+        "Tu es l'esprit analytique d'Océane, architecte d'un Zettelkasten 'vivant'.\n"
+        "INPUTS : \n"
+        "1. FLUX : Discussion brute.\n"
+        "2. RAG : Souvenirs statiques.\n"
+        "3. CONSCIENCE SYSTÈME : Notes actives (Ignition) signalées par le moteur cognitif.\n\n"
+
+        "MISSION 1 : LE DASHBOARD (Synthèse Vivante)\n"
+        "- Synthétise les échanges en connectant les idées actuelles aux notes de la 'CONSCIENCE SYSTÈME'.\n"
+        "- Utilise ABONDAMMENT les [[Wikilinks]] pour lier les concepts (ex: 'On discute de [[Chaos]] et de son lien avec la [[Mémoire]]').\n"
+        "- Si le système te suggère une note pertinente, mentionne-la explicitement.\n\n"
+
+        "MISSION 2 : JARDINAGE DES CONCEPTS (Extraction)\n"
+        "- Identifie les concepts CLÉS.\n"
+        "- Si un concept existe déjà (vu dans la Conscience Système), reprends EXACTEMENT son titre pour permettre l'enrichissement (Fusion).\n"
+        "- Si c'est nouveau, crée-le.\n"
+        "- Définition : Doit être atomique, intemporelle et dense.\n\n"
+
         "FORMAT DE SORTIE OBLIGATOIRE :\n"
-        "[... Ton résumé Dashboard ici ...]\n\n"
+        "[... Ton résumé Dashboard riche en [[liens]] ...]\n\n"
         "---EXTRACTION_START---\n"
-        "TITRE: Nom du concept 1\n"
+        "TITRE: Nom du concept\n"
         "TAGS: [Tag1, Tag2]\n"
-        "CONTENU: Définition atomique et intemporelle (sans 'je' ni 'aujourd'hui').\n"
+        "CONTENU: Définition...\n"
         "###\n"
-        "TITRE: Nom du concept 2\n"
+        "TITRE: Concept Existant\n"
         "TAGS: [TagA]\n"
-        "CONTENU: ...\n"
+        "CONTENU: Nouvelle idée à ajouter à la note existante...\n"
         "---EXTRACTION_END---"
     )
 
@@ -128,7 +155,26 @@ class Config:
     JOURNAL_PATH = LOGS_DIR / f"journal_{SESSION_ID}.jsonl"
     DASHBOARD_PATH = LOGS_DIR / "dashboard.md"
 
+    # --- PARAMÈTRES COGNITIFS (ADR-022) ---
+    # Coefficients du Poids de Base (Potentiel de Repos)
+    COEF_STRUCTURE = 1.5  # Importance des liens (Alpha)
+    COEF_RECENCY = 10.0  # Importance de la fraîcheur (Beta) - Fort bonus si récent
+    COEF_MATURITY = {  # Facteur de confiance (Gamma)
+        "état/graine": 0.5,
+        "état/sapling": 0.8,
+        "état/evergreen": 1.2
+    }
+
+    # Dynamique (Runtime)
+    IGNITION_THRESHOLD = 60.0  # Score pour devenir "Conscient"
+    DECAY_RATE = 0.95  # Facteur d'oubli par cycle (95% reste, 5% disparait)
+    FATIGUE_PENALTY = 5.0  # Coût par cycle d'activation consécutif
+
+
     SPEAKER_MAPPING = {"SPEAKER_00": "Utilisateur", "SPEAKER_01": "Océane"}
     DEFAULT_SPEAKER = "Utilisateur"
 
+
+
     STOP_SIGNAL_PATH = LOGS_DIR / "oceane.stop"
+

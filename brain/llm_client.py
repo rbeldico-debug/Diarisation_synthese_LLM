@@ -17,7 +17,7 @@ class LLMClient:
             response = self.client.chat.completions.create(
                 model=Config.LLM_MODEL_NAME,
                 messages=messages,
-                temperature=0.7
+                temperature=Config.TEMP_CHAT
             )
             return self._strip_thinking(response.choices[0].message.content)
         except Exception as e:

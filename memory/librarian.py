@@ -1,3 +1,4 @@
+from datetime import datetime
 from brain.router import IntentRouter
 from memory.vector_manager import VectorManager
 from memory.storage_manager import MemoryManager
@@ -10,35 +11,55 @@ class Librarian:
     """
 
     def __init__(self):
-        self.router = IntentRouter()  # Pour calculer les embeddings
-        self.vectors = VectorManager()  # Pour chercher/indexer
-        self.storage = MemoryManager()  # Pour écrire dans Obsidian
+        self.router = IntentRouter()
+        self.vectors = VectorManager()
+        self.storage = MemoryManager()  # Contient self.storage.obsidian (Bridge)
 
-    def process_concept(self, title: str, content: str, tags: list):
-        # 0. Nettoyage préventif du titre pour simuler le nom de fichier
-        # (On utilise la même logique que storage_manager pour deviner le nom)
+    def process_concept(self, title: str, content: str, tags: list) -> str:
+        """
+        Traite un concept extrait par l'Analyste.
+        Retourne le nom du fichier (pour les logs).
+        """
+        # Nettoyage du titre
         safe_title = "".join([c for c in title if c.isalnum() or c in (' ', '_', '-')]).strip()
         potential_filename = f"{safe_title}.md"
 
-        # --- GARDE-FOU 1 : EXISTENCE PHYSIQUE (Nom Exact) ---
+        # --- CAS 1 : EXISTENCE PHYSIQUE (Nom Exact) ---
+        # Si une note porte DÉJÀ ce nom précis (ex: "Chaos.md"), on enrichit.
         if self.storage.obsidian.file_exists(potential_filename):
-            print(f"[Librarian] 📂 Fichier existant identifié : '{potential_filename}'. Fusion directe.")
-            self.storage.obsidian.append_to_note(potential_filename, content)
-            return  # On s'arrête là, pas besoin de calcul vectoriel coûteux
+            print(f"[Librarian] 📂 Fichier existant identifié : '{potential_filename}'. Fusion...")
+            self._append_to_note(potential_filename, content)
+            return potential_filename
 
-        # 1. Calcul du vecteur (si pas trouvé par nom)
+        # --- CAS 2 : RECHERCHE SÉMANTIQUE (Vecteurs) ---
+        # Si le nom n'existe pas, est-ce qu'on parle de la même chose qu'une autre note ?
         embedding = self.router.get_embedding(content)
-        if embedding is None: return
 
-        # 2. Recherche Sémantique (Vecteurs)
-        existing_filename = self.vectors.find_existing_concept(embedding, threshold=0.20) # On monte un peu le seuil (0.15 -> 0.20)
+        existing_filename = None
+        if embedding is not None:
+            # Seuil à 0.20 (environ 80% de similarité)
+            existing_filename = self.vectors.find_existing_concept(embedding, threshold=0.20)
 
         if existing_filename:
-            # --- CAS A : FUSION (Enrichissement) ---
+            # C'est une fusion sémantique
             print(f"[Librarian] 🔄 Concept sémantiquement proche : '{existing_filename}'. Fusion...")
-            self.storage.obsidian.append_to_note(existing_filename, content)
+            self._append_to_note(existing_filename, content)
+            return existing_filename
         else:
-            # --- CAS B : CRÉATION ---
+            # --- CAS 3 : CRÉATION PURE ---
             print(f"[Librarian] ✨ Nouveau concept pur : '{title}'. Création...")
             real_filename = self.storage.create_atomic_note(title, content, tags)
-            self.vectors.index_concept(real_filename, content, embedding, tags)
+
+            # On indexe immédiatement le nouveau concept dans ChromaDB
+            if embedding is not None:
+                self.vectors.index_concept(real_filename, content, embedding, tags)
+
+            return real_filename
+
+    def _append_to_note(self, filename: str, content: str):
+        """Ajoute le contenu avec un timestamp."""
+        timestamp = datetime.now().strftime('%d/%m/%Y %H:%M')
+        # On prépare un bloc Markdown propre
+        append_text = f"\n\n### Enrichissement IA ({timestamp})\n{content}"
+
+        self.storage.obsidian.append_to_note(filename, append_text)

@@ -7,9 +7,7 @@ import numpy as np
 import os
 import sys
 from config import Config
-
-# Patch NumPy
-if not hasattr(np, "NaN"): np.NaN = np.nan
+from brain.graph.manager import GraphStateManager
 
 from ears.microphone import MicrophoneStream
 from ears.vad_engine import VADSegmenter
@@ -17,63 +15,124 @@ from output.speaker import mouth_worker
 from memory.storage_manager import MemoryManager
 
 
-def analyst_process(stop_event: multiprocessing.Event, tts_queue: multiprocessing.Queue):
-    """P4 : Analyste + Oracle Vocal + Bibliothécaire"""  # <--- Updated docstring
+def analyst_process(stop_event: multiprocessing.Event,
+                    tts_queue: multiprocessing.Queue,
+                    stimuli_queue: multiprocessing.Queue):
+    """P4 : Analyste + Oracle Vocal + Bibliothécaire + Cerveau + Moniteur"""
     from analyst.synthesizer import Synthesizer
     from memory.storage_manager import MemoryManager
-    from memory.librarian import Librarian  # <--- Nouvel import
+    from memory.librarian import Librarian
     import time
 
-    synther = Synthesizer()
+    # --- INITIALISATION ---
+    print("[Analyste] 🧠 Chargement de la structure mentale (Graph)...")
+    graph_manager = GraphStateManager()
+    graph_manager.load_state()
+
+    synther = Synthesizer(graph_manager=graph_manager)
     memory = MemoryManager()
-    librarian = Librarian()  # <--- Instanciation
+    librarian = Librarian()
 
     last_vocal_brief = time.time()
-    VOCAL_INTERVAL = 120
+    VOCAL_INTERVAL = 120.0
+
+    last_decay_time = time.time()
+    last_monitor_time = time.time()  # Timer dédié pour l'affichage
 
     print(f"[Analyste] ✅ Prêt. Session : {Config.SESSION_ID}")
 
-    while not stop_event.is_set():
-        # ... (Boucle d'attente inchangée) ...
-        for _ in range(Config.ANALYST_UPDATE_INTERVAL_SECONDS):
-            if stop_event.is_set(): return
-            time.sleep(1)
+    try:
+        while not stop_event.is_set():
 
-        # 1. GÉNÉRATION
-        dashboard_md, concepts = synther.generate_summary()
+            # --- 1. GESTION DU TEMPS (Oubli / Decay) ---
+            # Toutes les 60s, on refroidit le cerveau
+            now = time.time()
+            if now - last_decay_time > 60.0:
+                for node in graph_manager.nodes.values():
+                    node.decay()
+                    node.rest()
+                last_decay_time = now
 
-        # 2. UPDATE DASHBOARD
-        memory.update_dashboard(dashboard_md)
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        print(f"[Analyste] 📝 {timestamp} : Dashboard mis à jour.")
+            # --- 2. BOUCLE RAPIDE (Attente active & Réflexes) ---
+            # C'est ici qu'on attend le moment de générer le dashboard (60s)
+            # Mais pendant qu'on attend, on surveille les stimuli et on affiche le moniteur
 
-        # 3. TRAITEMENT INTELLIGENT DES CONCEPTS (Librarian)
-        if concepts:
-            print(f"[Analyste] 💎 {len(concepts)} concepts candidats. Le Bibliothécaire analyse...")
-            for concept in concepts:
+            # On découpe l'attente en tranches de 0.1s
+            loops = int(Config.ANALYST_UPDATE_INTERVAL_SECONDS * 10)
+
+            for _ in range(loops):
                 if stop_event.is_set(): break
+
+                # A. Réception des Stimuli (Bottom-Up)
                 try:
-                    # On délègue tout au Bibliothécaire
-                    librarian.process_concept(
-                        title=concept['title'],
-                        content=concept['content'],
-                        tags=concept['tags']
-                    )
-                    time.sleep(0.5)
-                except Exception as e:
-                    print(f"[Analyste] ⚠️ Erreur Librarian sur '{concept.get('title')}': {e}")
+                    stimulus = stimuli_queue.get_nowait()
+                    graph_manager.inject_stimulus(stimulus['text'], stimulus['tags'])
+                except queue.Empty:
+                    pass
 
-        sys.stdout.flush()
+                # B. Moniteur Temps Réel (toutes les 5 secondes pour être réactif)
+                now = time.time()
+                if now - last_monitor_time > 5.0:
+                    # On cherche les nœuds excités (Activation > 0.1)
+                    top_nodes = sorted(
+                        [n for n in graph_manager.nodes.values() if n.activation > 0.1],
+                        key=lambda x: x.activation,
+                        reverse=True
+                    )[:3]
 
-        # 4. BRIEFING VOCAL (Reste inchangé)
-        now = time.time()
-        if now - last_vocal_brief >= VOCAL_INTERVAL:
-            # ... (Code existant du briefing vocal)
-            brief = synther.generate_vocal_brief(dashboard_md)
-            if brief:
-                tts_queue.put(brief)
-                last_vocal_brief = now
+                    if top_nodes:
+                        print(f"\n[🔥 ACTIVITÉ] Top Focus :")
+                        for n in top_nodes:
+                            # On affiche Activation (Réflexe) et Poids Total (Fond)
+                            print(f"  - {n.filename} : Act={n.activation:.1f} | Total={n.get_current_weight():.1f}")
+                    last_monitor_time = now
 
+                time.sleep(0.1)  # Pause CPU
+
+            if stop_event.is_set(): break
+
+            # --- 3. COGITATION PROFONDE (Dashboard) ---
+            # Une fois le temps d'attente écoulé, on réfléchit
+            dashboard_md, concepts = synther.generate_summary()
+            memory.update_dashboard(dashboard_md)
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            print(f"[Analyste] 📝 {timestamp} : Dashboard mis à jour.")
+
+            # --- 4. Traitement des Concepts ---
+            if concepts:
+                print(f"[Analyste] 💎 {len(concepts)} concepts candidats...")
+                for concept in concepts:
+                    if stop_event.is_set(): break
+                    try:
+                        filename = librarian.process_concept(
+                            title=concept['title'],
+                            content=concept['content'],
+                            tags=concept['tags']
+                        )
+                        print(f"[Analyste] ✨ Concept traité : {filename}")
+                        time.sleep(0.5)
+                    except Exception as e:
+                        print(f"[Analyste] ⚠️ Erreur Librarian sur '{concept.get('title')}': {e}")
+
+            sys.stdout.flush()
+
+            # --- 5. Briefing Vocal ---
+            now = time.time()
+            if Config.ENABLE_TTS and (now - last_vocal_brief >= VOCAL_INTERVAL):
+                brief = synther.generate_vocal_brief(dashboard_md)
+                if brief:
+                    tts_queue.put(brief)
+                    last_vocal_brief = now
+
+    except Exception as e:
+        print(f"[Analyste] ❌ Erreur critique : {e}")
+        import traceback
+        traceback.print_exc()
+
+    finally:
+        print("\n[Analyste] 🛑 Arrêt demandé. Sauvegarde du cerveau...")
+        graph_manager.save_state()
+        print("[Analyste] 👋 Au revoir.")
 
 def ear_process(audio_queue: multiprocessing.Queue, stop_event: multiprocessing.Event):
     """P1 : Oreille"""
@@ -96,8 +155,8 @@ def ear_process(audio_queue: multiprocessing.Queue, stop_event: multiprocessing.
         print(f"[Oreille] ❌ Erreur micro : {e}")
 
 
-def brain_process(audio_queue: multiprocessing.Queue, stop_event: multiprocessing.Event):
-    """P2 : Cerveau"""
+def brain_process(audio_queue: multiprocessing.Queue, stimuli_queue: multiprocessing.Queue, stop_event: multiprocessing.Event):
+    """P2 : Cerveau (Transcription + Routing + Envoi Stimuli)"""
     from brain.inference_client import InferenceClient
     from brain.router import IntentRouter
     from memory.storage_manager import MemoryManager
@@ -132,6 +191,16 @@ def brain_process(audio_queue: multiprocessing.Queue, stop_event: multiprocessin
             vector_db.add_to_memory(text=text, embedding=embedding,
                                     metadata={"timestamp": timestamp, "intent": tags, "session": Config.SESSION_ID})
 
+        # --- NOUVEAU : ENVOI DU STIMULUS NERVEUX ---
+        # On envoie immédiatement l'info au Graphe (via l'Analyste)
+        try:
+            stimuli_queue.put({"text": text, "tags": tags})
+        except Exception:
+            pass
+
+        print(f"📝 {tags} : {text}")
+        sys.stdout.flush()
+
         print(f"📝 {tags} : {text}")
         sys.stdout.flush()
 
@@ -149,12 +218,13 @@ if __name__ == "__main__":
     m_q = multiprocessing.Queue()
     t_q = multiprocessing.Queue()
     s_ev = multiprocessing.Event()
+    s_q = multiprocessing.Queue()  # Stimuli Queue
 
     processes = [
         multiprocessing.Process(target=ear_process, args=(m_q, s_ev), name="Oreille"),
-        multiprocessing.Process(target=brain_process, args=(m_q, s_ev), name="Cerveau"),
+        multiprocessing.Process(target=brain_process, args=(m_q, s_q, s_ev), name="Cerveau"),
         multiprocessing.Process(target=mouth_worker, args=(t_q, s_ev), name="Bouche"),
-        multiprocessing.Process(target=analyst_process, args=(s_ev, t_q), name="Analyste")
+        multiprocessing.Process(target=analyst_process, args=(s_ev, t_q, s_q), name="Analyste")
     ]
 
     for p in processes: p.start()
