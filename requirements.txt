@@ -16,3 +16,9 @@ urllib3
 pygame==2.5.2
 edge-tts
 asyncio
+#--- Visualisation des tableaux d'exécution ---
+rich
+fastapi
+uvicorn
+Jinja2
+python-multipart

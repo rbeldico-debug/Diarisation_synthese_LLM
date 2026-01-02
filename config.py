@@ -165,16 +165,17 @@ class Config:
         "état/evergreen": 1.2
     }
 
-    # Dynamique (Runtime)
+    # --- Dynamique (Runtime) ---
     IGNITION_THRESHOLD = 60.0  # Score pour devenir "Conscient"
     DECAY_RATE = 0.95  # Facteur d'oubli par cycle (95% reste, 5% disparait)
     FATIGUE_PENALTY = 5.0  # Coût par cycle d'activation consécutif
-
+    FATIGUE_TOLERANCE = 4.0  # Seuil d'activation consécutive (N_max)
+    PROPAGATION_RATE = 0.2  # 20% de l'activation est transmise aux voisins par cycle
 
     SPEAKER_MAPPING = {"SPEAKER_00": "Utilisateur", "SPEAKER_01": "Océane"}
     DEFAULT_SPEAKER = "Utilisateur"
 
-
-
     STOP_SIGNAL_PATH = LOGS_DIR / "oceane.stop"
+
+
 

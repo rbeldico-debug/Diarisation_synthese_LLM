@@ -106,6 +106,9 @@ class Synthesizer:
                 f"SOUVENIRS & CONSCIENCE DU SYSTÈME :\n{past_memories}"
             )
 
+            # [LOGGING WEB] Sauvegarde du Prompt (Input)
+            self._log_llm_trace("INPUT", prompt_content)
+
             response = self.client.chat.completions.create(
                 model=Config.ANALYST_MODEL_NAME,
                 messages=[
@@ -114,6 +117,11 @@ class Synthesizer:
                 ],
                 temperature=Config.TEMP_ANALYST
             )
+
+            # [LOGGING WEB] Sauvegarde de la Réponse (Output)
+            raw_content = response.choices[0].message.content
+            self._log_llm_trace("OUTPUT", raw_content)
+
             raw_content = response.choices[0].message.content
         except Exception as e:
             return f"⚠️ Erreur LLM : {e}", []
@@ -154,6 +162,19 @@ class Synthesizer:
         final_md += "---\n\n### 🎙️ Historique des Briefings\n" + vocal_history
 
         return final_md, concepts
+
+    def _log_llm_trace(self, type_msg: str, content: str):
+        trace_path = Config.LOGS_DIR / "llm_trace.jsonl"
+        entry = {
+            "timestamp": datetime.now().strftime("%H:%M:%S"),
+            "type": type_msg,  # INPUT ou OUTPUT
+            "content": content
+        }
+        try:
+            with open(trace_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except:
+            pass
 
     def generate_vocal_brief(self, markdown_content: str) -> str:
         """Génère le texte vocal."""

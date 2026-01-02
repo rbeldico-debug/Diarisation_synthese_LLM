@@ -1,8 +1,10 @@
+# brain/graph/node.py
+
 import math
 from dataclasses import dataclass, field
 from typing import Set, Optional
 from datetime import datetime
-from pathlib import Path  # <--- Indispensable
+from pathlib import Path
 from config import Config
 
 
@@ -12,7 +14,7 @@ class GraphNode:
     Représentation en mémoire d'une note atomique (Le Neurone).
     """
     # --- Données Persistantes ---
-    full_path: Path  # <--- Ajout : Chemin absolu vers le fichier .md
+    full_path: Path
     filename: str
     uid: str
     title: str
@@ -57,7 +59,19 @@ class GraphNode:
             self.activation = 0.0
 
     def get_current_weight(self) -> float:
-        fatigue_cost = (self.consecutive_activations ** 2) * Config.FATIGUE_PENALTY
+        """
+        Calcule le poids total en appliquant la pénalité de fatigue
+        conformément à la formule de l'ADR-022.
+        """
+        # Formule de l'ADR : Penalty = (n / N_max) ** 3
+        # Pour éviter une division par zéro si N_max est 0, on s'assure qu'il est > 0
+        if Config.FATIGUE_TOLERANCE > 0:
+            fatigue_ratio = self.consecutive_activations / Config.FATIGUE_TOLERANCE
+            # La pénalité est mise à l'échelle par le score statique pour être proportionnelle
+            fatigue_cost = (fatigue_ratio ** 3) * self._static_score
+        else:
+            fatigue_cost = 0.0
+
         total = (self._static_score + self.activation) - fatigue_cost
         return max(0.0, total)
 
@@ -65,6 +79,7 @@ class GraphNode:
         self.consecutive_activations += 1
 
     def rest(self):
+        # L'oubli de la fatigue est plus lent que l'oubli de l'activation
         if self.consecutive_activations > 0:
             self.consecutive_activations -= 1
 

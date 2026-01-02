@@ -1,51 +1,74 @@
 # 🌊 Océane - Assistant de Réflexion Sémantique (v2.5)
 
-Océane est un écosystème multi-agents local conçu pour transformer vos réflexions orales en un **Zettelkasten** structuré dans Obsidian.
+Océane est un écosystème multi-agents local conçu pour transformer vos réflexions orales en un **Zettelkasten** structuré.
+Cette version introduit une **Architecture Cognitive Hybride** : le système possède une "mémoire de travail" volatile (RAM) qui simule l'attention, et une "mémoire à long terme" persistante (Obsidian)
 
 ## 🏗️ Architecture des Agents
-1. **P1: L'Oreille** (Silero VAD) : Découpe le flux audio en segments logiques.
-2. **P2: Le Cerveau** (Whisper + Semantic Router) : Transcrit, identifie les locuteurs et classe les intentions via **Similarité Cosinus** (pas de LLM pour le tri, 100% fiable).
-3. **P3: La Bouche** (Edge-TTS) : Restitue des briefings vocaux haute fidélité (Voix: Vivienne).
-4. **P4: L'Analyste** (Mistral-Nemo + RAG) : Analyse le journal JSONL, interroge **ChromaDB** pour retrouver des souvenirs passés, et sculpte le Dashboard Obsidian.
+1.  **P1: L'Oreille** (Silero VAD) : Découpe le flux audio en segments logiques.
+2.  **P2: Le Cerveau** (Whisper + Semantic Router) : Transcrit et identifie les intentions via **Similarité Cosinus**.
+3.  **P3: La Bouche** (Edge-TTS) : Restitue des briefings vocaux (Voix: Vivienne).
+4.  **P4: L'Analyste** (Moteur Cognitif) :
+    *   Gère le **Graphe Mental** en RAM (Poids, Activation, Ignition).
+    *   Exécute la **Propagation Top-Down** (l'activation d'un concept réveille ses voisins).
+    *   Interroge le **LLM (Mistral/GPT)** pour la synthèse et l'extraction de concepts.
+5.  **P5: Le Moniteur** (FastAPI Sidecar) : Un serveur Web dédié qui affiche l'état interne du cerveau en temps réel.
 
-## 🧠 Fonctions Avancées
-- **Similarité Sémantique** : Plus d'hallucination de tags. Le système compare mathématiquement vos propos à la Taxonomie Universelle.
-- **RAG (Retrieval Augmented Generation)** : L'analyste crée des liens `[[WikiLinks]]` entre vos propos actuels et vos réflexions des sessions précédentes.
-- **Zettelkasten Automatique** : À chaque arrêt, une note atomique formatée est archivée dans votre Vault Obsidian.
+## 🧠 Fonctions Cognitives (Nouveau)
+*   **Dynamique d'Attention (ADR-022)** : Chaque note possède une "Barre de Vie" (Activation).
+    *   **Ignition 🔥** : Si l'attention dépasse un seuil, la note devient "Consciente" et est envoyée au LLM.
+    *   **Fatigue 📉** : Si une note reste active trop longtemps, une pénalité la force à s'éteindre pour laisser place à d'autres sujets.
+*   **Propagation Neuronale** : Parler de "Politique" activera doucement les notes liées comme "Éthique" ou "Pouvoir" (Top-Down).
+*   **Observabilité Totale (ADR-023)** : Un Dashboard Web (Port 8003) permet de voir :
+    *   L'activité neuronale (Jauges d'activation).
+    *   Les Prompts bruts envoyés au LLM et ses réponses exactes (Debug).
 
 ## 🛠️ Maintenance & Commandes
-- **Démarrage** : `execute.bat` (Lance Docker Whisper, ChromaDB, Ollama et le script Main).
-- **Arrêt propre** : `python stop.py` (Déclenche l'archivage final et coupe les processus).
+
+**Lancement** : Ne lancez plus `python main.py` manuellement. Utilisez le script qui gère le nettoyage des processus et le lancement simultané du serveur Web et du moteur.
+1.  Double-cliquez sur **`start_oceane.bat`**.
+2.  Deux fenêtres s'ouvrent :
+    *   **Le Moteur** : Affiche les logs techniques.
+    *   **Le Serveur Web** : Démarre en arrière-plan.
+3.  Ouvrez votre navigateur sur : **[http://localhost:8003](http://localhost:8003)** (ou 8002 selon config).
+
+**Arrêt propre** : `python stop.py` (Déclenche l'archivage final et coupe les processus).
 
 ## 📊 Architecture du Flux
 
 ```mermaid
 graph TD
     subgraph "HÔTE WINDOWS (Python 3.11)"
-        A[Microphone] --> B(P1: Oreille - Silero VAD)
-        B -->|Segment Audio| C(P2: Cerveau - Orchestrateur)
-        C -->|Texte + Intent| D[(Journal.jsonl - Journaling)]
-        D --> E(P4: Analyste - Synthèse)
-        E -->|Markdown| F[Dashboard.md - Zettelkasten]
-        C -->|Texte Réponse| G(P3: Bouche - Piper TTS)
+        A[Microphone] --> B(P1: Oreille)
+        B -->|Audio| C(P2: Cerveau)
+        C -->|Intent + Texte| D[(Bus de Données JSONL)]
+        
+        subgraph "MOTEUR COGNITIF"
+            D --> E(P4: Analyste)
+            E <-->|R/W| F[Mémoire RAM GraphState]
+            F -->|Sauvegarde| G[Obsidian Vault .md]
+            E -->|Snapshot Activité| H[brain_activity.json]
+        end
+        
+        subgraph "MONITORING (Sidecar)"
+            D --> I(P5: Serveur Web FastAPI)
+            H --> I
+            I -->|WebSocket/Polling| J[Navigateur Web Dashboard]
+        end
+        
+        C -->|TTS| K(P3: Bouche)
     end
 
-    subgraph "DOCKER (Isolé - GPU)"
-        C -->|API| H[Speaches: Whisper + Diarization]
-        C -->|API| I[Router: Llama 1B]
-    end
-
-    subgraph "OLLAMA (Service Externe)"
-        C -->|API| J[LLM Principal: gpt-oss-20b]
-        E -->|API| J
+    subgraph "DOCKER & OLLAMA"
+        C -.->|API| Whisper
+        E -.->|API| LLM_Ollama
     end
 ```
 
 ## 🛠️ Pré-requis
 
-*   **OS** : Windows 10/11 avec **Docker Desktop** (WSL2 backend).
-*   **GPU** : NVIDIA RTX (drivers à jour).
-*   **Outils** : Ollama (installé sur Windows).
+*   **OS** : Windows 10/11.
+*   **Outils** : Docker Desktop, Ollama.
+*   **Python** : 3.11 avec environnement virtuel (Attention, 3.13 ne fonctionne pas).
 
 ## 🚀 Installation Rapide
 
@@ -70,25 +93,21 @@ graph TD
 
 *   **Diarisation** : Automatiquement gérée par le serveur Speaches via l'argument `extra_body={"diarization": True}` dans `diarization.py`.
 *   **VRAM** : Le modèle `large-v3` consomme environ 5-6 Go de VRAM sur votre GPU via Docker.
+*   **Paramètres cognitifs** : Ajustables pour changer la "personnalité" du système.
 
 ## ▶️ Utilisation
 
 1.  Lancer Ollama.
 2.  Lancer le conteneur Docker (si pas déjà fait).
-3.  Exécuter le programme :
-    ```bash
-    python main.py
-    ```
-
-## 💎 Avantages de la v2.0
-*   **Zéro Conflit** : Plus de problème de version NumPy ou de DLL CUDA manquantes.
-*   **Performance** : Le modèle Whisper est pré-chargé dans la VRAM par Docker, éliminant la latence de chargement au premier mot.
-*   **Portabilité** : Le code Python est devenu un simple client API ultra-léger.
+3.  Double-cliquez sur start_oceane.bat. Deux fenêtres s'ouvrent :
+   - Le Moteur : Affiche les logs techniques.
+   - Le Serveur Web : Démarre en arrière-plan.
+   Ouvrez votre navigateur sur : http://localhost:8002 (ou 8002 selon config).
 
 
 ---
 
-### 4. Rappel du fichier `docker-compose.yml` (À placer à la racine)
+### Rappel du fichier `docker-compose.yml` (À placer à la racine)
 C'est le fichier qui "sauve" ton projet.
 
 ```yaml

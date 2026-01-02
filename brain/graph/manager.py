@@ -1,3 +1,4 @@
+import json
 import re
 from pathlib import Path
 from typing import Dict, Optional, Any
@@ -32,54 +33,60 @@ class GraphStateManager:
                 print(f"[Graph] ❌ Erreur lecture {file_path.name}: {e}")
         print(f"[Graph] ✅ Graphe construit : {loaded_count} nœuds actifs.")
 
-        # [NOUVEAU] Phase de "Cristallisation"
-        # On met à jour les fichiers physiques avec le poids calculé initial
-        print(f"[Graph] 🧮 Cristallisation des poids initiaux...")
+        # Phase de "Cristallisation" : On sauvegarde le poids statique calculé
+        print(f"[Graph] 🧮 Cristallisation des poids initiaux dans les fichiers MD...")
         updated_count = 0
         for node in self.nodes.values():
-            # Le nœud vient d'être chargé, son _static_score est frais.
-            # On veut que le fichier reflète ce score (arrondi).
-            current_calc = node.get_current_weight()
-
-            # On vérifie si ça vaut le coup d'écrire (éviter I/O inutile)
-            # Si la différence entre le poids stocké et le calculé est > 0.1
-            if abs(node.base_weight - current_calc) > 0.1:
+            # Si le poids calculé diffère significativement de celui stocké, on met à jour
+            current_calc = node._static_score  # On prend le score statique pur
+            if abs(node.base_weight - current_calc) > 0.5:
                 try:
-                    self._update_node_file(node)
+                    # On met à jour la valeur en RAM pour qu'elle soit synchro
+                    node.base_weight = current_calc
+                    self._update_node_file(node, update_weight=True)
                     updated_count += 1
                 except Exception:
                     pass
 
-        print(f"[Graph] 💾 {updated_count} notes mises à jour avec leur poids structurel.")
+        if updated_count > 0:
+            print(f"[Graph] 💾 {updated_count} notes mises à jour (Poids calibrés).")
+
+    def propagate_activation(self):
+        """
+        ADR-022 (Top-Down): Les nœuds actifs transmettent de l'énergie à leurs voisins.
+        """
+        transfers = {}
+
+        for source_node in self.nodes.values():
+            if source_node.activation > 0.1:
+                energy_packet = source_node.activation * Config.PROPAGATION_RATE
+                for target_filename in source_node.links:
+                    if target_filename in self.nodes:
+                        if target_filename not in transfers:
+                            transfers[target_filename] = 0.0
+                        transfers[target_filename] += energy_packet
+
+        count = 0
+        for target_filename, amount in transfers.items():
+            self.nodes[target_filename].stimulate(amount)
+            count += 1
 
     def save_state(self):
-        """
-        Sauvegarde l'état pertinent (Date mise à jour, Poids Statique) dans les fichiers.
-        À appeler à l'arrêt du système.
-        """
         print(f"[Graph] 💾 Sauvegarde de l'état mental...")
         count = 0
         for node in self.nodes.values():
-            # Critère de sauvegarde :
-            # 1. Le nœud a été activé pendant la session (activation > 0 ou fatigue > 0)
-            # 2. OU c'est une nouvelle note (pas encore implémenté ici mais géré par Librarian)
-            # if node.activation > 1.0 or node.consecutive_activations > 0: #Désactivé pour sauvegarder tous les poids.
-            if node.full_path and node.full_path.exists():
-                try:
-                    self._update_node_file(node)
-                    count += 1
-                except Exception as e:
-                    print(f"[Graph] ❌ Erreur sauvegarde {node.filename}: {e}")
-
-
+            if node.activation > 0.1 or node.consecutive_activations > 0:
+                if node.full_path and node.full_path.exists():
+                    try:
+                        self._update_node_file(node, update_weight=False)
+                        count += 1
+                    except Exception as e:
+                        print(f"[Graph] ❌ Erreur sauvegarde {node.filename}: {e}")
 
         if count > 0:
-            print(f"[Graph] ✅ {count} notes mises à jour (Activité détectée).")
-        else:
-            print(f"[Graph] 💤 Aucune modification structurelle à sauvegarder.")
+            print(f"[Graph] ✅ {count} notes mises à jour (Activité).")
 
-    def _update_node_file(self, node: GraphNode):
-        """Écrit physiquement dans le fichier .md (Mise à jour métadonnées uniquement)."""
+    def _update_node_file(self, node: GraphNode, update_weight: bool = False):
         if not node.full_path or not node.full_path.exists():
             return
 
@@ -88,23 +95,31 @@ class GraphStateManager:
 
         new_lines = []
         in_yaml = False
-
-        # On met à jour la date car le nœud a été "touché" par l'esprit
+        yaml_start = False
         new_date_str = datetime.now().strftime(Config.DATE_FORMAT)
+        weight_written = False
 
         for line in lines:
-            if line.strip() == "---":
-                in_yaml = not in_yaml
+            stripped = line.strip()
+            if stripped == "---":
+                if not yaml_start:
+                    yaml_start = True
+                    in_yaml = True
+                else:
+                    if update_weight and not weight_written and in_yaml:
+                        new_lines.append(f"poids: {int(node.base_weight)}\n")
+                    in_yaml = False
                 new_lines.append(line)
                 continue
 
             if in_yaml:
-                # Mise à jour date
-                if line.strip().startswith("date_updated:"):
+                if stripped.startswith("date_updated:"):
                     new_lines.append(f"date_updated: {new_date_str}\n")
                     continue
-                # (Optionnel) Mise à jour poids statique si tu veux le persister
-                # if line.strip().startswith("poids:"): ...
+                if stripped.startswith("poids:") and update_weight:
+                    new_lines.append(f"poids: {int(node.base_weight)}\n")
+                    weight_written = True
+                    continue
 
             new_lines.append(line)
 
@@ -121,9 +136,8 @@ class GraphStateManager:
         yaml_match = re.search(r'^---\n(.*?)\n---', content, re.DOTALL)
 
         if not yaml_match:
-            # Note sans YAML
             return GraphNode(
-                full_path=path,  # <---
+                full_path=path,
                 filename=path.name,
                 uid="",
                 title=path.stem,
@@ -135,7 +149,6 @@ class GraphStateManager:
 
         yaml_text = yaml_match.group(1)
         meta = self._simple_yaml_parse(yaml_text)
-
         body = content[yaml_match.end():]
         links = set(self.link_pattern.findall(body))
         normalized_links = {f"{link}.md" if not link.endswith(".md") else link for link in links}
@@ -149,7 +162,7 @@ class GraphStateManager:
             weight = float(Config.DEFAULT_WEIGHT)
 
         return GraphNode(
-            full_path=path,  # <--- Stockage du chemin
+            full_path=path,
             filename=path.name,
             uid=meta.get("uid", ""),
             title=path.stem,
@@ -160,44 +173,52 @@ class GraphStateManager:
         )
 
     def inject_stimulus(self, text: str, intent_tags: str):
-        """
-        Bottom-Up : Réaction immédiate aux mots entendus.
-        Parcourt les nœuds et stimule ceux qui sont mentionnés.
-        """
         text_lower = text.lower()
-
-        # On nettoie les tags reçus du Router (ex: "[POLITIQUE] [CHAOS]")
-        # Pour en faire une liste : ['POLITIQUE', 'CHAOS']
         detected_tags = set(re.findall(r'\[(.*?)\]', intent_tags))
-
         stimulated_count = 0
 
         for node in self.nodes.values():
             boost = 0.0
-
-            # 1. Correspondance Directe (Le mot est dit)
-            # Ex: Si on dit "Chaos", le nœud "Chaos.md" ou "Théorie du Chaos.md" s'allume
             if node.title.lower() in text_lower:
-                boost += 15.0  # Grosse décharge (Mots-clés)
-                print(f"[Réflexe] ⚡ Stimulation directe : {node.filename} (+15)")
-
-            # 2. Correspondance Thématique (Tags)
-            # Ex: Si le Router sort [POLITIQUE] et que la note est tagguée politique
-            # On fait une intersection entre les tags du nœud et les tags détectés
+                boost += 15.0
             common_tags = node.tags.intersection(detected_tags)
             if common_tags:
-                boost += 2.0 * len(common_tags)  # Petite décharge d'ambiance
-
-            # Application
+                boost += 3.0 * len(common_tags)
             if boost > 0:
                 node.stimulate(boost)
                 stimulated_count += 1
 
-        if stimulated_count > 0:
-            # Petit log pour confirmer que le système nerveux fonctionne
-            pass
+    def export_activity_snapshot(self, filepath: Path, top_k: int = 20):
+        """Exporte l'état des nœuds pour le monitoring web."""
+        all_nodes = list(self.nodes.values())
 
-    # ... (Le reste : _simple_yaml_parse, _parse_date, get_node inchangé) ...
+        # Tri : D'abord par Activation, puis par Poids
+        sorted_nodes = sorted(
+            all_nodes,
+            key=lambda x: (x.activation, x.get_current_weight()),
+            reverse=True
+        )[:top_k]
+
+        snapshot = {
+            "timestamp": datetime.now().isoformat(),
+            "nodes": [
+                {
+                    "title": n.title,
+                    "activation": round(n.activation, 2),
+                    "total_weight": round(n.get_current_weight(), 2),
+                    "links": len(n.links),
+                    "fatigue": n.consecutive_activations
+                }
+                for n in sorted_nodes
+            ]
+        }
+
+        try:
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(snapshot, f, ensure_ascii=False)
+        except Exception as e:
+            print(f"[Graph] ⚠️ Erreur export snapshot : {e}")
+
     @staticmethod
     def _simple_yaml_parse(yaml_text: str) -> Dict[str, Any]:
         data = {}

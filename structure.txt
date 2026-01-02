@@ -1,22 +1,47 @@
---- START OF FILE structure.txt ---
-project_root/
-│
-├── main.py                    # Orchestration P1, P2, P3, P4
-├── config.py                  # Prompts de l'Analyste et du Router
-│
-├── brain/                     # L'ESPRIT RÉACTIF
-│   ├── router.py              # Petit modèle (Llama 1B) : Répondre ou Écouter ?
-│   └── llm_client.py          # Gros modèle (GPT-OSS) : Conversation
-│
-├── analyst/                   # L'ESPRIT ANALYTIQUE (Processus P4)
-│   ├── synthesizer.py         # Lit le journal -> Génère le Markdown
-│   └── templates.py           # Structure du Markdown (Titres, Bullet points)
-│
-├── memory/                    # LA PERSISTANCE (Le "Coffre-fort")
-│   ├── storage_manager.py     # Gère l'écriture simultanée JSONL / MD
-│   ├── journal.jsonl          # La source de vérité brute (Machine)
-│   └── dashboard.md           # Ce que tu affiches sur ton 2ème écran (Humain)
-│
-└── output/                    # LES SORTIES
-    └── speaker.py             # TTS (La Bouche)
---- END OF FILE structure.txt ---
+Project Root: Diarisation_Synthese_LLM/
+├── ADR/
+├── analyst/
+│   └── synthesizer.py
+├── brain/
+│   ├── graph/
+│   │   ├── manager.py
+│   │   ├── node.py
+│   │   └── test_graph.py
+│   ├── __init__.py
+│   ├── inference_client.py
+│   ├── llm_client.py
+│   ├── router.py
+│   └── sanitizer.py
+├── core/
+│   ├── __init__.py
+│   ├── data_models.py
+│   └── warmup.py
+├── ears/
+│   ├── __init__.py
+│   ├── microphone.py
+│   └── vad_engine.py
+├── memory/
+│   ├── librarian.py
+│   ├── obsidian_bridge.py
+│   ├── storage_manager.py
+│   └── vector_manager.py
+├── output/
+│   ├── __init__.py
+│   ├── formatter.py
+│   ├── speaker.py
+│   └── tui_manager.py
+├── templates/
+│   └── dashboard.html
+├── test_segments/
+│   ├── phrase_002.wav
+│   ├── phrase_003.wav
+│   └── warmup.wav
+├── .env
+├── .gitignore
+├── config.py
+├── docker-compose.yml
+├── main.py
+├── requirements.txt
+├── server.py
+├── start_oceane.bat
+└── stop.py
