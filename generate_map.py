@@ -27,7 +27,7 @@ IGNORE_EXTENSIONS = {
 # Style visuel
 # True  = Arbre (│ ├──) -> Joli pour l'humain
 # False = Indentation   -> Économe pour le LLM
-USE_ASCII_ART = True
+USE_ASCII_ART = False
 
 
 def generate_structure(root_path, output_path, use_art=True):

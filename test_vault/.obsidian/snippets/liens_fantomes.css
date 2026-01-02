@@ -1,0 +1,13 @@
+body {
+    /* 1. La couleur du texte (Le rouge que vous vouliez) */
+    --link-unresolved-color: #781818;
+
+    /* 2. L'opacité (1 = 100% visible, fini le gris pâle) */
+    --link-unresolved-opacity: 0.5;
+
+    /* 3. La couleur du soulignement (pour qu'il soit aussi rouge) */
+    --link-unresolved-decoration-color: #781818;
+
+    /* 4. Le style du soulignement (Optionnel : dashed = pointillés) */
+    --link-unresolved-decoration-style: dashed;
+}
