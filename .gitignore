@@ -9,3 +9,5 @@ docker-compose.yml
 __pycache__/
 *.py[cod]
 *$py.class
+/test_vault/
+/logs/
