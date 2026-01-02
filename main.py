@@ -8,6 +8,7 @@ import os
 import sys
 from config import Config
 from brain.graph.manager import GraphStateManager
+from brain.sanitizer import TextSanitizer
 
 from ears.microphone import MicrophoneStream
 from ears.vad_engine import VADSegmenter
@@ -155,20 +156,24 @@ def ear_process(audio_queue: multiprocessing.Queue, stop_event: multiprocessing.
         print(f"[Oreille] ❌ Erreur micro : {e}")
 
 
-def brain_process(audio_queue: multiprocessing.Queue, stimuli_queue: multiprocessing.Queue, stop_event: multiprocessing.Event):
+def brain_process(audio_queue: multiprocessing.Queue,
+                  stimuli_queue: multiprocessing.Queue,
+                  stop_event: multiprocessing.Event):
     """P2 : Cerveau (Transcription + Routing + Envoi Stimuli)"""
     from brain.inference_client import InferenceClient
     from brain.router import IntentRouter
     from memory.storage_manager import MemoryManager
     from memory.vector_manager import VectorManager
     from core.warmup import WarmupManager
+    import time
 
     inference = InferenceClient()
     router = IntentRouter()
     memory = MemoryManager()
     vector_db = VectorManager()
-    warmup = WarmupManager(inference, router, vector_db, stop_event)
 
+    # Warmup
+    warmup = WarmupManager(inference, router, vector_db, stop_event)
     warmup.perform_all()
     print(f"[Cerveau] 🧠 Système stabilisé.")
     sys.stdout.flush()
@@ -180,26 +185,29 @@ def brain_process(audio_queue: multiprocessing.Queue, stimuli_queue: multiproces
             continue
 
         text, speakers = inference.process_audio(payload.audio_data, payload.sample_rate)
-        if not text.strip(): continue
+
+        # --- FILTRAGE ANTI-BRUIT SEULEMENT ---
+        # On rejette les "Sous-titrage ST 501" mais on garde "K.O."
+        if not TextSanitizer.is_valid(text):
+            continue
+
+        # (L'étape de nettoyage REPLACEMENTS a été supprimée)
 
         tags = router.route(text)
         embedding = router.get_embedding(text)
+
         timestamp = datetime.now().isoformat()
-
         memory.log_event(source="user", text=text, intent=tags, extra={"speakers": speakers})
-        if embedding is not None:
-            vector_db.add_to_memory(text=text, embedding=embedding,
-                                    metadata={"timestamp": timestamp, "intent": tags, "session": Config.SESSION_ID})
 
-        # --- NOUVEAU : ENVOI DU STIMULUS NERVEUX ---
-        # On envoie immédiatement l'info au Graphe (via l'Analyste)
+        # Envoi Stimulus
         try:
             stimuli_queue.put({"text": text, "tags": tags})
         except Exception:
             pass
 
-        print(f"📝 {tags} : {text}")
-        sys.stdout.flush()
+        if embedding is not None:
+            vector_db.add_to_memory(text=text, embedding=embedding,
+                                    metadata={"timestamp": timestamp, "intent": tags, "session": Config.SESSION_ID})
 
         print(f"📝 {tags} : {text}")
         sys.stdout.flush()
