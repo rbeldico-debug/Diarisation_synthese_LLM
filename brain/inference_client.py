@@ -3,17 +3,14 @@ import wave
 import numpy as np
 from pathlib import Path
 from openai import OpenAI
-from config import Config
+from core.settings import settings
 
 
 class InferenceClient:
-    """Client pour la transcription et diarisation via Speaches (Docker)."""
-
     def __init__(self):
-        self.client = OpenAI(base_url=Config.WHISPER_BASE_URL, api_key="not-needed")
+        self.client = OpenAI(base_url=settings.WHISPER_BASE_URL, api_key="not-needed")
 
     def warm_up(self, test_file_path: str = "test_segments/warmup.wav"):
-        """Préchauffe le moteur STT pour éliminer la latence de première requête."""
         print("[STT] 🔥 Préchauffage du moteur Whisper...")
 
         test_path = Path(test_file_path)
@@ -21,23 +18,17 @@ class InferenceClient:
         if test_path.exists():
             # Cas 1 : Utilisation de ton fichier audio réel
             try:
-                with open(test_path, "rb") as f:
-                    audio_bytes = f.read()
-                # On envoie directement le binaire à l'API
-                self.client.audio.transcriptions.create(
-                    model=Config.WHISPER_MODEL,
-                    file=(test_path.name, audio_bytes),
-                    response_format="verbose_json"
-                )
-                print(f"[STT] ✅ Préchauffage réussi avec {test_file_path}")
-                return
+                silence = np.zeros(settings.SAMPLE_RATE, dtype=np.float32)
+                self.process_audio(silence, settings.SAMPLE_RATE)
+                print("[STT] ✅ Préchauffage réussi (Silence généré).")
             except Exception as e:
-                print(f"[STT] ⚠️ Échec warm-up avec fichier : {e}")
+                print(f"[STT] ❌ Échec critique du préchauffage : {e}")
+                return
 
         # Cas 2 : Repli (Fallback) sur un buffer de silence si le fichier n'est pas là
         try:
-            silence = np.zeros(Config.SAMPLE_RATE, dtype=np.float32)
-            self.process_audio(silence, Config.SAMPLE_RATE)
+            silence = np.zeros(settings.SAMPLE_RATE, dtype=np.float32)
+            self.process_audio(silence, settings.SAMPLE_RATE)
             print("[STT] ✅ Préchauffage réussi (Silence généré).")
         except Exception as e:
             print(f"[STT] ❌ Échec critique du préchauffage : {e}")
@@ -53,12 +44,11 @@ class InferenceClient:
         buffer.seek(0)
 
         try:
-            # Ajout du paramètre language="fr" pour éviter les bascules en anglais
             response = self.client.audio.transcriptions.create(
-                model=Config.WHISPER_MODEL,
+                model=settings.WHISPER_MODEL,
                 file=("audio.wav", buffer),
                 response_format="verbose_json",
-                language="fr" # <--- FORCE LE FRANÇAIS ICI
+                language="fr"
             )
 
             text = response.text
@@ -68,9 +58,9 @@ class InferenceClient:
                     s_id = getattr(seg, 'speaker', None)
                     if s_id: speakers.append(s_id)
 
-            unique_speakers = sorted(list(set(speakers))) if speakers else [Config.DEFAULT_SPEAKER]
+            unique_speakers = sorted(list(set(speakers))) if speakers else ["Utilisateur"]
             return text, unique_speakers
 
         except Exception as e:
             print(f"[Inference] ❌ Erreur API : {e}")
-            return "", [Config.DEFAULT_SPEAKER]
+            return "", ["Utilisateur"]

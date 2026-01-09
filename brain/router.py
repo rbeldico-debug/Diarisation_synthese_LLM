@@ -1,22 +1,22 @@
 import numpy as np
-import os
-from datetime import datetime
 from openai import OpenAI
-from config import Config
-
+from core.settings import settings
 
 class IntentRouter:
+    """
+    Version ADR-026 (Allégée).
+    Ne fait plus de classification taxonomique rigide.
+    Sert uniquement à :
+    1. Générer les embeddings pour la mémoire vectorielle.
+    2. Filtrer le bruit (phrases trop courtes).
+    """
     def __init__(self):
-        self.client = OpenAI(base_url=Config.ROUTER_BASE_URL, api_key="ollama")
-        self.taxonomy = Config.TAXONOMY
-        self._cached_taxonomy_embeddings = None
-        # Fichier pour capturer les manques de la taxonomie
-        self.reflexion_log = Config.LOGS_DIR / "tag_reflexion.log"
+        self.chat_client = OpenAI(base_url=settings.ROUTER_BASE_URL, api_key="ollama")
 
-    def get_embedding(self, text: str): # <--- Changement de nom ici
+    def get_embedding(self, text: str):
         try:
-            response = self.client.embeddings.create(
-                model=Config.EMBEDDING_MODEL_NAME,
+            response = self.chat_client.embeddings.create(
+                model=settings.EMBEDDING_MODEL_NAME,
                 input=text
             )
             return np.array(response.data[0].embedding)
@@ -25,43 +25,34 @@ class IntentRouter:
             return None
 
     def _precompute_taxonomy(self):
-        print("[Router] 🧮 Initialisation de la taxonomie sémantique...")
-        embeddings = []
-        for tag in self.taxonomy:
-            emb = self.get_embedding(tag)
-            if emb is not None: embeddings.append(emb)
-        self._cached_taxonomy_embeddings = np.array(embeddings)
+        # OBSOLÈTE avec ADR-026, mais gardé vide pour compatibilité si appelé par main.py
+        pass
 
     def route(self, text: str) -> str:
-        if self._cached_taxonomy_embeddings is None:
-            self._precompute_taxonomy()
+        """
+        Analyse l'intention de l'utilisateur.
+        Retourne : [READ], [WRITE], [CMD] ou [CHAT].
+        """
+        if len(text.split()) < 2: return "[CHAT]"  # Trop court
 
-        # --- FILTRE DE BRUIT (Optionnel mais recommandé) ---
-        # Si la phrase fait moins de 3 mots, c'est souvent du test ou du bruit.
-        if len(text.split()) < 3:
-            return "[NOTE_RAPIDE]"  # Ou un tag neutre de ton choix
+        try:
+            response = self.chat_client.chat.completions.create(
+                model=settings.ROUTER_MODEL_NAME,  # mistral-nemo
+                messages=[
+                    {"role": "system", "content": settings.ROUTER_SYSTEM_PROMPT},
+                    {"role": "user", "content": text}
+                ],
+                temperature=0.0  # Très déterministe
+            )
+            intent = response.choices[0].message.content.strip()
 
-        user_emb = self.get_embedding(text)
-        if user_emb is None: return "[REFLEXION]"
+            # Sécurité si le LLM bavarde
+            if "[READ]" in intent: return "[READ]"
+            if "[WRITE]" in intent: return "[WRITE]"
+            if "[CMD]" in intent: return "[CMD]"
 
-        # Similarité Cosinus
-        similarities = np.dot(self._cached_taxonomy_embeddings, user_emb) / (
-                np.linalg.norm(self._cached_taxonomy_embeddings, axis=1) * np.linalg.norm(user_emb)
-        )
+            return "[CHAT]"  # Défaut
 
-        best_indices = np.argsort(similarities)[-3:][::-1]
-
-        # --- RÉGLAGE DE LA PRÉCISION ---
-        # On passe le seuil de 0.35 à 0.45 ou 0.50 pour être plus sélectif
-        THRESHOLD = 0.55
-
-        results = [f"[{self.taxonomy[i]}]" for i in best_indices if similarities[i] > THRESHOLD]
-
-        if not results:
-            # Ici, le log va enfin servir !
-            with open(self.reflexion_log, "a", encoding="utf-8") as f:
-                timestamp = datetime.now().isoformat()
-                f.write(f"{timestamp} | {text} (Best score was: {similarities[best_indices[0]]:.2f})\n")
-            return "[REFLEXION]"
-
-        return " ".join(results)
+        except Exception as e:
+            print(f"[Router] ⚠️ Erreur classification : {e}")
+            return "[CHAT]"

@@ -1,261 +1,126 @@
 import json
-import re
 from pathlib import Path
-from typing import Dict, Optional, Any
-from datetime import datetime
+from typing import Dict, List
 
-from config import Config
+from core.settings import settings
 from brain.graph.node import GraphNode
+from brain.graph.scanner import VaultScanner
 
 
 class GraphStateManager:
+    """
+    Implémente ADR-019 (Runtime RAM) et ADR-022 (Dynamique).
+    """
+
     def __init__(self):
+        self.state_file = settings.LOGS_DIR / "brain_state.json"
         self.nodes: Dict[str, GraphNode] = {}
-        self.vault_root = Config.OBSIDIAN_VAULT_PATH
-        self.link_pattern = re.compile(r'\[\[([^|\]]+)(?:\|.*?)?')
 
     def load_state(self):
-        print(f"[Graph] 📂 Scan récursif du coffre : {self.vault_root}")
-        if not self.vault_root.exists():
-            print(f"[Graph] ⚠️ Dossier introuvable : {self.vault_root}")
-            return
+        # 1. SCAN PHYSIQUE (ADR-019 Start)
+        # On charge la structure réelle pour calculer S, C, T
+        scanner = VaultScanner()
+        self.nodes = scanner.scan_vault()
 
-        loaded_count = 0
-        for file_path in self.vault_root.rglob("*.md"):
-            if ".obsidian" in file_path.parts or ".trash" in file_path.parts:
-                continue
+        # 2. Chargement État Volatile (Activations précédentes)
+        if self.state_file.exists():
             try:
-                node = self._parse_file(file_path)
-                if node:
-                    self.nodes[node.filename] = node
-                    loaded_count += 1
-            except Exception as e:
-                print(f"[Graph] ❌ Erreur lecture {file_path.name}: {e}")
-        print(f"[Graph] ✅ Graphe construit : {loaded_count} nœuds actifs.")
+                with open(self.state_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    for fname, n_data in data.items():
+                        if fname in self.nodes:
+                            # On restaure uniquement l'énergie (Volatile)
+                            self.nodes[fname].activation = n_data.get("activation", 0.0)
+                            self.nodes[fname].consecutive_activations = n_data.get("consecutive_activations", 0)
+            except Exception:
+                pass
 
-        # Phase de "Cristallisation" : On sauvegarde le poids statique calculé
-        print(f"[Graph] 🧮 Cristallisation des poids initiaux dans les fichiers MD...")
-        updated_count = 0
+        print(f"[Graph] Cortex chargé : {len(self.nodes)} nœuds actifs.")
+
+    def save_state(self):
+        # ADR-019 End : On ne sauvegarde que le volatile ici.
+        # Le persistant (YAML) est géré par Librarian/Gardener.
+        data = {}
+        for fname, node in self.nodes.items():
+            if node.activation > 0.1:  # Optimisation
+                data[fname] = {
+                    "activation": node.activation,
+                    "consecutive_activations": node.consecutive_activations
+                }
+        try:
+            with open(self.state_file, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+        except:
+            pass
+
+    def inject_stimulus(self, text: str, tags: str):
+        """
+        ADR-022 : Recrutement Bottom-Up (Stimulus).
+        Active les nœuds pertinents par rapport au flux entrant.
+        """
+        text_lower = text.lower()
+
+        # 1. Activation par correspondance directe (Keyword Match)
+        # Si le titre d'une note est mentionné, elle reçoit un fort boost.
         for node in self.nodes.values():
-            # Si le poids calculé diffère significativement de celui stocké, on met à jour
-            current_calc = node._static_score  # On prend le score statique pur
-            if abs(node.base_weight - current_calc) > 0.5:
-                try:
-                    # On met à jour la valeur en RAM pour qu'elle soit synchro
-                    node.base_weight = current_calc
-                    self._update_node_file(node, update_weight=True)
-                    updated_count += 1
-                except Exception:
-                    pass
+            # On nettoie le titre pour la comparaison (.md)
+            clean_title = node.title.lower()
+            if clean_title in text_lower:
+                # BOOST STIMULUS
+                # Le boost est arbitraire ici, à calibrer (ex: +20)
+                node.stimulate(20.0)
+                # print(f"[Graph] ⚡ Stimulus Direct : {node.title}")
 
-        if updated_count > 0:
-            print(f"[Graph] 💾 {updated_count} notes mises à jour (Poids calibrés).")
+        # 2. Activation par Intention (Tags)
+        # TODO: Si le routeur détecte [PHILOSOPHIE], activer faiblement tout ce qui est tagué #sujet/philosophie
 
     def propagate_activation(self):
         """
-        ADR-022 (Top-Down): Les nœuds actifs transmettent de l'énergie à leurs voisins.
+        ADR-022 : Amplification Top-Down.
+        L'énergie se diffuse via les liens (Links).
         """
-        transfers = {}
+        # On calcule les deltas d'abord pour ne pas modifier pendant l'itération
+        activations_delta = {}
 
-        for source_node in self.nodes.values():
-            if source_node.activation > 0.1:
-                energy_packet = source_node.activation * Config.PROPAGATION_RATE
-                for target_filename in source_node.links:
-                    if target_filename in self.nodes:
-                        if target_filename not in transfers:
-                            transfers[target_filename] = 0.0
-                        transfers[target_filename] += energy_packet
+        for filename, node in self.nodes.items():
+            if node.activation > 1.0:
+                # Quantité d'énergie transmise aux voisins
+                energy_to_spread = node.activation * settings.PROPAGATION_RATE
 
-        count = 0
-        for target_filename, amount in transfers.items():
-            self.nodes[target_filename].stimulate(amount)
-            count += 1
+                # Répartition équitable ou totale ? ADR suggère Top-Down.
+                # On divise par le nombre de liens pour ne pas exploser le système
+                if node.links:
+                    energy_per_link = energy_to_spread / len(node.links)
 
-    def save_state(self):
-        print(f"[Graph] 💾 Sauvegarde de l'état mental...")
-        count = 0
-        for node in self.nodes.values():
-            if node.activation > 0.1 or node.consecutive_activations > 0:
-                if node.full_path and node.full_path.exists():
-                    try:
-                        self._update_node_file(node, update_weight=False)
-                        count += 1
-                    except Exception as e:
-                        print(f"[Graph] ❌ Erreur sauvegarde {node.filename}: {e}")
+                    for target_link in node.links:
+                        # target_link est ex: "Concept.md"
+                        if target_link in self.nodes:
+                            activations_delta[target_link] = activations_delta.get(target_link, 0.0) + energy_per_link
 
-        if count > 0:
-            print(f"[Graph] ✅ {count} notes mises à jour (Activité).")
+        # Application des deltas
+        for fname, amount in activations_delta.items():
+            self.nodes[fname].stimulate(amount)
 
-    def _update_node_file(self, node: GraphNode, update_weight: bool = False):
-        if not node.full_path or not node.full_path.exists():
-            return
+    def export_activity_snapshot(self, filepath: Path):
+        """Génère la vue pour le Dashboard (Tri par Poids ADR-022)."""
+        snapshot = {"nodes": []}
 
-        with open(node.full_path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
+        # On utilise get_current_weight() qui est la formule ADR-022 complète
+        # W_t = Static(S,C,T) + Dynamic(Act) - Fatigue
+        sorted_nodes = sorted(self.nodes.values(), key=lambda x: x.get_current_weight(), reverse=True)
 
-        new_lines = []
-        in_yaml = False
-        yaml_start = False
-        new_date_str = datetime.now().strftime(Config.DATE_FORMAT)
-        weight_written = False
-
-        for line in lines:
-            stripped = line.strip()
-            if stripped == "---":
-                if not yaml_start:
-                    yaml_start = True
-                    in_yaml = True
-                else:
-                    if update_weight and not weight_written and in_yaml:
-                        new_lines.append(f"poids: {int(node.base_weight)}\n")
-                    in_yaml = False
-                new_lines.append(line)
-                continue
-
-            if in_yaml:
-                if stripped.startswith("date_updated:"):
-                    new_lines.append(f"date_updated: {new_date_str}\n")
-                    continue
-                if stripped.startswith("poids:") and update_weight:
-                    new_lines.append(f"poids: {int(node.base_weight)}\n")
-                    weight_written = True
-                    continue
-
-            new_lines.append(line)
-
-        with open(node.full_path, "w", encoding="utf-8") as f:
-            f.writelines(new_lines)
-
-    def _parse_file(self, path: Path) -> Optional[GraphNode]:
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                content = f.read()
-        except UnicodeDecodeError:
-            return None
-
-        yaml_match = re.search(r'^---\n(.*?)\n---', content, re.DOTALL)
-
-        if not yaml_match:
-            return GraphNode(
-                full_path=path,
-                filename=path.name,
-                uid="",
-                title=path.stem,
-                tags=set(),
-                links=set(),
-                base_weight=float(Config.DEFAULT_WEIGHT),
-                date_updated=datetime.now()
-            )
-
-        yaml_text = yaml_match.group(1)
-        meta = self._simple_yaml_parse(yaml_text)
-        body = content[yaml_match.end():]
-        links = set(self.link_pattern.findall(body))
-        normalized_links = {f"{link}.md" if not link.endswith(".md") else link for link in links}
-
-        raw_weight = meta.get("poids", Config.DEFAULT_WEIGHT)
-        if isinstance(raw_weight, list):
-            raw_weight = raw_weight[0] if raw_weight else Config.DEFAULT_WEIGHT
-        try:
-            weight = float(raw_weight)
-        except (ValueError, TypeError):
-            weight = float(Config.DEFAULT_WEIGHT)
-
-        return GraphNode(
-            full_path=path,
-            filename=path.name,
-            uid=meta.get("uid", ""),
-            title=path.stem,
-            tags=set(meta.get("tags", [])),
-            links=normalized_links,
-            base_weight=weight,
-            date_updated=self._parse_date(meta.get("date_updated"))
-        )
-
-    def inject_stimulus(self, text: str, intent_tags: str):
-        text_lower = text.lower()
-        detected_tags = set(re.findall(r'\[(.*?)\]', intent_tags))
-        stimulated_count = 0
-
-        for node in self.nodes.values():
-            boost = 0.0
-            if node.title.lower() in text_lower:
-                boost += 15.0
-            common_tags = node.tags.intersection(detected_tags)
-            if common_tags:
-                boost += 3.0 * len(common_tags)
-            if boost > 0:
-                node.stimulate(boost)
-                stimulated_count += 1
-
-    def export_activity_snapshot(self, filepath: Path, top_k: int = 20):
-        """Exporte l'état des nœuds pour le monitoring web."""
-        all_nodes = list(self.nodes.values())
-
-        # Tri : D'abord par Activation, puis par Poids
-        sorted_nodes = sorted(
-            all_nodes,
-            key=lambda x: (x.activation, x.get_current_weight()),
-            reverse=True
-        )[:top_k]
-
-        snapshot = {
-            "timestamp": datetime.now().isoformat(),
-            "nodes": [
-                {
-                    "title": n.title,
-                    "activation": round(n.activation, 2),
-                    "total_weight": round(n.get_current_weight(), 2),
-                    "links": len(n.links),
-                    "fatigue": n.consecutive_activations
-                }
-                for n in sorted_nodes
-            ]
-        }
+        for node in sorted_nodes[:20]:
+            snapshot["nodes"].append({
+                "title": node.title,
+                "weight": round(node.get_current_weight(), 1),
+                "activation": round(node.activation, 1),
+                "fatigue": node.consecutive_activations,
+                "ignited": node.activation > settings.IGNITION_THRESHOLD,
+                "links": len(node.links)
+            })
 
         try:
             with open(filepath, "w", encoding="utf-8") as f:
-                json.dump(snapshot, f, ensure_ascii=False)
-        except Exception as e:
-            print(f"[Graph] ⚠️ Erreur export snapshot : {e}")
-
-    @staticmethod
-    def _simple_yaml_parse(yaml_text: str) -> Dict[str, Any]:
-        data = {}
-        lines = yaml_text.split('\n')
-        current_list = None
-        for line in lines:
-            line = line.strip()
-            if not line: continue
-            if line.startswith("- "):
-                val = line[2:].strip()
-                if current_list and isinstance(data.get(current_list), list):
-                    data[current_list].append(val)
-                continue
-            if ":" in line:
-                key, val = line.split(":", 1)
-                key = key.strip()
-                val = val.strip()
-                if not val:
-                    current_list = key
-                    data[key] = []
-                else:
-                    current_list = None
-                    val = val.replace('"', '').replace("'", "")
-                    if val.startswith('[') and val.endswith(']'):
-                        content = val[1:-1]
-                        data[key] = [x.strip() for x in content.split(',')] if content else []
-                    else:
-                        data[key] = val
-        return data
-
-    @staticmethod
-    def _parse_date(date_str: Any) -> datetime:
-        if not date_str: return datetime.now()
-        try:
-            return datetime.strptime(str(date_str).strip(), Config.DATE_FORMAT)
-        except ValueError:
-            return datetime.now()
-
-    def get_node(self, filename: str) -> Optional[GraphNode]:
-        return self.nodes.get(filename)
+                json.dump(snapshot, f)
+        except:
+            pass

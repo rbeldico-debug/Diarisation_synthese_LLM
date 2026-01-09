@@ -1,6 +1,5 @@
 import chromadb
-from config import Config
-
+from core.settings import settings
 
 class VectorManager:
     """
@@ -12,13 +11,15 @@ class VectorManager:
 
     def __init__(self):
         try:
-            self.client = chromadb.HttpClient(host="localhost", port=8001)
+            self.client = chromadb.HttpClient(
+                host=settings.CHROMA_HOST,
+                port=settings.CHROMA_PORT
+            )
 
             # Collection 1 : Souvenirs de conversation
             self.memory_collection = self.client.get_or_create_collection(name="gerald_memory")
 
             # Collection 2 : Concepts atomiques (Zettelkasten)
-            # On utilise une distance cosinus pour la similarité sémantique
             self.concept_collection = self.client.get_or_create_collection(
                 name="oceane_concepts",
                 metadata={"hnsw:space": "cosine"}
@@ -26,6 +27,7 @@ class VectorManager:
             print("[Vecteur] 🟢 Connexion ChromaDB établie (2 collections).")
         except Exception as e:
             print(f"[Vecteur] ⚠️ Erreur d'initialisation Chroma : {e}")
+            # IMPORTANT : On définit les attributs à None pour éviter le crash AttributeError
             self.memory_collection = None
             self.concept_collection = None
 
@@ -34,9 +36,13 @@ class VectorManager:
         if not self.memory_collection: return
         try:
             doc_id = f"msg_{metadata.get('timestamp').replace(':', '-')}"
+
+            # CORRECTIF : Gestion sécurisée du type embedding
+            safe_embedding = embedding.tolist() if hasattr(embedding, 'tolist') else embedding
+
             self.memory_collection.add(
                 ids=[doc_id],
-                embeddings=[embedding.tolist()],
+                embeddings=[safe_embedding],
                 documents=[text],
                 metadatas=[metadata]
             )
@@ -45,22 +51,27 @@ class VectorManager:
 
     def search_similar(self, query_embedding: list, n_results: int = 5):
         if not self.memory_collection: return None
-        return self.memory_collection.query(
-            query_embeddings=[query_embedding.tolist()],
-            n_results=n_results
-        )
+        try:
+            safe_embedding = query_embedding.tolist() if hasattr(query_embedding, 'tolist') else query_embedding
+            return self.memory_collection.query(
+                query_embeddings=[safe_embedding],
+                n_results=n_results
+            )
+        except Exception as e:
+            print(f"[Vecteur] ⚠️ Erreur recherche memory : {e}")
+            return None
 
     # --- MÉTHODES POUR LES CONCEPTS (DÉDOUBLONNAGE) ---
     def find_existing_concept(self, embedding: list, threshold: float = 0.15):
         """
         Cherche un concept sémantiquement proche.
-        Note: En distance Cosine (Chroma), 0 = identique, 1 = opposé.
-        Seuil 0.15 équivaut environ à 0.85 de similarité.
         """
         if not self.concept_collection: return None
         try:
+            safe_embedding = embedding.tolist() if hasattr(embedding, 'tolist') else embedding
+
             results = self.concept_collection.query(
-                query_embeddings=[embedding.tolist()],
+                query_embeddings=[safe_embedding],
                 n_results=1
             )
 
@@ -80,9 +91,11 @@ class VectorManager:
         """Enregistre un nouveau concept dans l'index."""
         if not self.concept_collection: return
         try:
+            safe_embedding = embedding.tolist() if hasattr(embedding, 'tolist') else embedding
+
             self.concept_collection.add(
-                ids=[filename],  # On utilise le nom du fichier comme ID unique
-                embeddings=[embedding.tolist()],
+                ids=[filename],
+                embeddings=[safe_embedding],
                 documents=[content],
                 metadatas={"tags": str(tags)}
             )

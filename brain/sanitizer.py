@@ -17,6 +17,7 @@ class TextSanitizer:
         r"(?i)abonnez-vous",
         r"(?i)suivez-nous",
         r"(?i)transcrit par",
+        r"(?i)société radio-canada",
         r"(?i)traduit par"
     ]
 

@@ -1,6 +1,5 @@
 # --- Flux Audio & VAD (Local - Compatible Python 3.13) ---
 # pip install torch torchaudio --extra-index-url https://download.pytorch.org/whl/cu121
-# --- Flux Audio & VAD ---
 openai
 python-dotenv
 sounddevice
@@ -22,3 +21,7 @@ fastapi
 uvicorn
 Jinja2
 python-multipart
+#--- pydantic-settings ---
+pydantic-settings
+PyYAML
+pydantic>=2.0.0

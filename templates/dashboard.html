@@ -5,89 +5,165 @@
     <title>Océane Control Center</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { background-color: #121212; color: #e0e0e0; font-family: 'Consolas', monospace; font-size: 0.9rem; }
-        .card { background-color: #1e1e1e; border: 1px solid #333; margin-bottom: 20px; height: 90vh; display: flex; flex-direction: column; }
-        .card-header { background-color: #252525; border-bottom: 1px solid #333; font-weight: bold; color: #4db8ff; }
-        .card-body { overflow-y: auto; flex-grow: 1; padding: 10px; }
+        body {
+            background-color: #121212;
+            color: #e0e0e0;
+            font-family: 'Consolas', monospace;
+            font-size: 0.9rem;
+            height: 100vh; /* Prend tout l'écran */
+            overflow: hidden; /* Pas de scroll global */
+            display: flex;
+            flex-direction: column;
+        }
 
-        /* Cerveau */
-        .progress { height: 6px; background-color: #333; margin-top: 5px; }
+        /* --- ZONE HAUTE (MONITORING) --- */
+        #top-zone {
+            flex: 0 0 65%; /* Prend 65% de la hauteur */
+            padding: 10px;
+            overflow: hidden;
+        }
+
+        .card {
+            background-color: #1e1e1e;
+            border: 1px solid #333;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card-header {
+            background-color: #252525;
+            border-bottom: 1px solid #333;
+            font-weight: bold;
+            color: #4db8ff;
+            padding: 5px 10px;
+        }
+
+        .card-body {
+            overflow-y: auto; /* Scroll interne uniquement */
+            flex-grow: 1;
+            padding: 10px;
+            font-size: 0.85rem;
+        }
+
+        /* --- ZONE BASSE (COMMANDES) --- */
+        #bottom-zone {
+            flex: 1; /* Prend le reste (35%) */
+            background-color: #181818;
+            border-top: 2px solid #444;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* --- STYLES SPÉCIFIQUES --- */
+        .progress { height: 4px; background-color: #333; margin-top: 2px; margin-bottom: 8px;}
         .bar-activation { background-color: #ff00ff; }
-        .bar-weight { background-color: #00cc00; }
-        .node-row { border-bottom: 1px solid #2a2a2a; padding: 8px 0; }
+        .node-row { border-bottom: 1px solid #2a2a2a; padding: 4px 0; }
 
-        /* Logs */
-        .log-entry { margin-bottom: 8px; border-left: 3px solid #555; padding-left: 8px; }
-        .log-user { border-left-color: #00cc00; }
-        .log-ia { border-left-color: #ff00ff; }
-        .tag-badge { background: #333; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; color: #aaa; }
+        .log-entry { margin-bottom: 6px; border-left: 3px solid #555; padding-left: 8px; }
+        .tag-badge { background: #333; padding: 1px 4px; border-radius: 3px; font-size: 0.75em; color: #aaa; }
 
-        /* LLM */
-        .llm-box { background: #181818; padding: 10px; margin-bottom: 15px; border: 1px solid #333; border-radius: 5px; white-space: pre-wrap; }
-        .llm-input { border-left: 3px solid #ffcc00; }
-        .llm-output { border-left: 3px solid #00ccff; }
-        .llm-label { font-size: 0.7em; text-transform: uppercase; margin-bottom: 5px; display: block; opacity: 0.7; }
+        .llm-box { background: #111; padding: 8px; margin-bottom: 10px; border: 1px solid #333; font-size: 0.8rem; white-space: pre-wrap; }
+
+        /* Bouton PTT Gigantesque */
+        #btn-ptt {
+            height: 50px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            transition: all 0.1s;
+        }
+        #btn-ptt:active { transform: scale(0.98); box-shadow: none; }
+
+        /* Input Texte Console */
+        #input-text {
+            background-color: #000;
+            border: 1px solid #555;
+            color: #0f0;
+            font-family: 'Consolas', monospace;
+            font-size: 1.1rem;
+            flex-grow: 1; /* Prend toute la hauteur dispo dans la zone basse */
+            resize: none;
+        }
+        #input-text:focus { outline: none; border-color: #0f0; box-shadow: 0 0 10px rgba(0, 255, 0, 0.2); }
+
+        /* Scrollbars fines */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1e1e1e; }
+        ::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
     </style>
 </head>
-<body class="p-3">
+<body>
 
-<div class="container-fluid">
-    <div class="row">
-        <!-- COLONNE 1 : CERVEAU -->
-        <div class="col-md-3">
+<!-- ZONE HAUTE : MONITORING (3 COLONNES) -->
+<div id="top-zone" class="container-fluid">
+    <div class="row h-100">
+        <!-- COL 1 : CERVEAU + PTT -->
+        <div class="col-md-3 d-flex flex-column h-100">
+            <!-- PTT BUTTON (Au-dessus du cerveau) -->
+            <button id="btn-ptt" class="btn btn-danger w-100">
+                🔇 PUSH TO TALK
+            </button>
+
             <div class="card">
                 <div class="card-header">🧠 Activité Neurale</div>
-                <div class="card-body" id="brain-container">
-                    <!-- Rempli par JS -->
-                </div>
+                <div class="card-body" id="brain-container"></div>
             </div>
         </div>
 
-        <!-- COLONNE 2 : LOGS SYSTÈME -->
-        <div class="col-md-4">
+        <!-- COL 2 : JOURNAL -->
+        <div class="col-md-4 h-100">
             <div class="card">
                 <div class="card-header">📜 Journal de Session</div>
-                <div class="card-body" id="logs-container">
-                    <!-- Rempli par JS -->
-                </div>
+                <div class="card-body" id="logs-container"></div>
             </div>
         </div>
 
-        <!-- COLONNE 3 : INSPECTION LLM -->
-        <div class="col-md-5">
+        <!-- COL 3 : LLM -->
+        <div class="col-md-5 h-100">
             <div class="card">
-                <div class="card-header">🤖 LLM Inspector (Input/Output)</div>
-                <div class="card-body" id="llm-container">
-                    <!-- Rempli par JS -->
-                </div>
+                <div class="card-header">🤖 LLM Inspector</div>
+                <div class="card-body" id="llm-container"></div>
             </div>
         </div>
     </div>
 </div>
 
+<!-- ZONE BASSE : COMMANDE TEXTUELLE -->
+<div id="bottom-zone">
+    <div class="d-flex justify-content-between mb-2">
+        <span class="text-muted">TERMINAL DE COMMANDE / FLUX DE PENSÉE</span>
+        <span class="text-success" style="font-size: 0.8em">● SYSTÈME EN LIGNE</span>
+    </div>
+    <textarea id="input-text" class="form-control"
+              placeholder="Tapez ici pour injecter une pensée ou une commande... (Shift+Entrée pour saut de ligne, Entrée pour envoyer)"></textarea>
+</div>
+
 <script>
+    // --- MOTEUR D'AFFICHAGE ---
     async function updateDashboard() {
-        // 1. Update Brain
+        // 1. Brain
         try {
             const resBrain = await fetch('/api/brain');
             const dataBrain = await resBrain.json();
             const brainDiv = document.getElementById('brain-container');
-
             let html = "";
             if(dataBrain.nodes) {
-                dataBrain.nodes.forEach(node => {
-                    let fatigue = node.fatigue > 0 ? "🔥" + node.fatigue : "";
-                    let styleTitle = node.activation > 0 ? "color: #fff; font-weight:bold;" : "color: #888;";
-
+                // On affiche max 30 noeuds pour pas saturer
+                dataBrain.nodes.slice(0, 30).forEach(node => {
+                    let styleTitle = node.activation > 1.0 ? "color: #fff; font-weight:bold; text-shadow: 0 0 5px #fff;" : "color: #888;";
+                    let icon = node.ignited ? "🔥" : "";
                     html += `
                     <div class="node-row">
                         <div class="d-flex justify-content-between">
-                            <span style="${styleTitle}">${node.title} ${fatigue}</span>
-                            <span>W: ${node.total_weight}</span>
-                        </div>
-                        <div class="d-flex justify-content-between" style="font-size:0.8em; color:#aaa;">
-                            <span>Act: ${node.activation}</span>
-                            <span>Links: ${node.links}</span>
+                            <span style="${styleTitle}">${icon} ${node.title}</span>
+                            <span class="text-muted" style="font-size:0.8em">W:${node.weight}</span>
                         </div>
                         <div class="progress">
                             <div class="progress-bar bar-activation" style="width: ${Math.min(node.activation * 10, 100)}%"></div>
@@ -96,24 +172,30 @@
                 });
             }
             brainDiv.innerHTML = html;
-        } catch(e) { console.error(e); }
+        } catch(e) {}
 
-        // 2. Update Logs & LLM
+        // 2. Logs
         try {
             const resLogs = await fetch('/api/logs');
             const dataLogs = await resLogs.json();
 
-            // Logs
+            // Journal
             const logsDiv = document.getElementById('logs-container');
             let logHtml = "";
             if (dataLogs.journal) {
                 dataLogs.journal.forEach(log => {
-                    let borderClass = log.source === "user" ? "log-user" : "log-ia";
-                    let time = log.timestamp.substring(11, 19);
+                    let color = "#555"; // IA Défaut
+                    if(log.source === "Clavier") color = "#00ccff"; // Bleu Cyan
+                    else if(log.source === "user" || log.source === "Utilisateur") color = "#00cc00"; // Vert
+                    else if(log.source === "Analyste") color = "#ff9900"; // Orange
+
                     logHtml += `
-                    <div class="log-entry ${borderClass}">
-                        <div><span class="text-muted">[${time}]</span> <span class="tag-badge">${log.intent_tag}</span></div>
-                        <div>${log.text}</div>
+                    <div class="log-entry" style="border-left-color:${color}">
+                        <div>
+                            <span class="text-muted" style="font-size:0.7em">[${log.timestamp.substring(11, 19)}]</span>
+                            <span class="tag-badge">${log.intent_tag}</span>
+                        </div>
+                        <div style="color:${log.source === 'Clavier' ? '#00ccff' : '#ddd'}">${log.text}</div>
                     </div>`;
                 });
             }
@@ -124,20 +206,63 @@
             let llmHtml = "";
             if (dataLogs.llm) {
                 dataLogs.llm.forEach(trace => {
-                    let typeClass = trace.type === "INPUT" ? "llm-input" : "llm-output";
+                    let typeClass = trace.type === "INPUT" ? "text-warning" : "text-info";
                     llmHtml += `
-                    <div class="llm-box ${typeClass}">
-                        <span class="llm-label text-${trace.type === "INPUT" ? "warning" : "info"}">${trace.type} | ${trace.timestamp}</span>
-                        ${trace.content}
+                    <div class="llm-box">
+                        <span class="${typeClass}" style="font-weight:bold">${trace.type}</span>
+                        <div style="opacity:0.8">${trace.content}</div>
                     </div>`;
                 });
             }
             llmDiv.innerHTML = llmHtml;
 
-        } catch(e) { console.error(e); }
+        } catch(e) {}
     }
 
-    // Rafraichissement toutes les 1s
+    // --- LOGIQUE PTT ---
+    const btnPtt = document.getElementById('btn-ptt');
+
+    const startPtt = () => {
+        btnPtt.classList.remove('btn-danger');
+        btnPtt.classList.add('btn-success');
+        btnPtt.innerHTML = "🎙️ ENREGISTREMENT...";
+        fetch('/api/control/ptt/start', {method: 'POST'});
+    };
+
+    const stopPtt = () => {
+        btnPtt.classList.remove('btn-success');
+        btnPtt.classList.add('btn-danger');
+        btnPtt.innerHTML = "🔇 PUSH TO TALK";
+        fetch('/api/control/ptt/stop', {method: 'POST'});
+    };
+
+    btnPtt.addEventListener('mousedown', startPtt);
+    btnPtt.addEventListener('mouseup', stopPtt);
+    btnPtt.addEventListener('mouseleave', () => {
+        if (btnPtt.classList.contains('btn-success')) stopPtt();
+    });
+
+    // --- LOGIQUE TEXTE (CHAT) ---
+    const inputTxt = document.getElementById('input-text');
+
+    inputTxt.addEventListener('keydown', async (e) => {
+        // Envoi avec Entrée (sans Shift)
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault(); // Empêche le saut de ligne
+            const text = inputTxt.value.trim();
+            if (text) {
+                inputTxt.value = ""; // Clear
+                await fetch('/api/input/text', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({text: text})
+                });
+                setTimeout(updateDashboard, 500); // Feedback rapide
+            }
+        }
+    });
+
+    // Refresh auto
     setInterval(updateDashboard, 1000);
     updateDashboard();
 </script>

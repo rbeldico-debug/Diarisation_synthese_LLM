@@ -1,76 +1,80 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 from pathlib import Path
 import json
 import collections
 
-from config import Config
+from core.settings import settings
 
 app = FastAPI()
-
-# Configuration des templates
-# Assurez-vous d'avoir créé le dossier "templates" et mis "dashboard.html" dedans
 templates = Jinja2Templates(directory="templates")
 
+# Modèle pour l'input texte
+class TextInput(BaseModel):
+    text: str
+
+# --- Helpers Logs ---
+def get_latest_journal():
+    try:
+        files = list(settings.LOGS_DIR.glob("journal_*.jsonl"))
+        if not files: return None
+        return max(files, key=lambda f: f.stat().st_mtime)
+    except Exception: return None
 
 def read_jsonl_tail(filepath: Path, n=50):
-    """Lit les N dernières lignes d'un JSONL de manière robuste."""
-    if not filepath.exists(): return []
+    if not filepath or not filepath.exists(): return []
     try:
         data = []
         with open(filepath, "r", encoding="utf-8") as f:
-            # On utilise deque pour ne lire que les dernières lignes efficacement
             lines = collections.deque(f, maxlen=n)
             for line in lines:
-                try:
-                    data.append(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
+                try: data.append(json.loads(line))
+                except: continue
         return data
-    except Exception as e:
-        print(f"Erreur lecture logs: {e}")
-        return []
+    except Exception: return []
 
+# --- Endpoints API ---
+
+@app.post("/api/input/text")
+async def send_text(payload: TextInput):
+    """Reçoit du texte depuis le Web et l'envoie à l'Orchestrateur."""
+    if hasattr(app.state, "input_queue"):
+        # On met un tuple ("text", contenu)
+        app.state.input_queue.put(("text", payload.text))
+        return {"status": "ok"}
+    raise HTTPException(status_code=503, detail="Queue non connectée")
+
+@app.post("/api/control/ptt/{action}")
+async def control_ptt(action: str):
+    """Contrôle le micro : action = 'start' ou 'stop'."""
+    if hasattr(app.state, "control_queue"):
+        if action in ["start", "stop"]:
+            app.state.control_queue.put(("ptt", action))
+            return {"status": f"Micro {action}"}
+    raise HTTPException(status_code=503, detail="Control Queue non connectée")
+
+# --- Endpoints Affichage ---
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
-    """Sert la page HTML principale."""
     return templates.TemplateResponse("dashboard.html", {"request": request})
-
 
 @app.get("/api/brain")
 async def get_brain():
-    """Renvoie l'état du graphe (snapshot généré par main.py)."""
-    path = Config.LOGS_DIR / "brain_activity.json"
+    path = settings.LOGS_DIR / "brain_activity.json"
     if path.exists():
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
-            pass
+            with open(path, "r", encoding="utf-8") as f: return json.load(f)
+        except: pass
     return {"nodes": []}
-
 
 @app.get("/api/logs")
 async def get_logs():
-    """Renvoie les logs système (Journal) et les traces LLM."""
-    # On lit les logs
-    journal = read_jsonl_tail(Config.JOURNAL_PATH, n=30)
-    llm_traces = read_jsonl_tail(Config.LOGS_DIR / "llm_trace.jsonl", n=10)
+    journal_path = get_latest_journal()
+    journal = read_jsonl_tail(journal_path, n=30)
+    llm = read_jsonl_tail(settings.LOGS_DIR / "llm_trace.jsonl", n=10)
+    return {"journal": list(reversed(journal)), "llm": list(reversed(llm))}
 
-    # On renverse les listes pour avoir le plus récent en haut dans l'UI
-    return {
-        "journal": list(reversed(journal)),
-        "llm": list(reversed(llm_traces))
-    }
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    # PORT 8002 pour éviter le conflit avec Whisper (8000) et Chroma (8001)
-    PORT = 8002
-    print(f"🚀 Dashboard accessible sur : http://localhost:{PORT}")
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+# Note: Le bloc if __name__ == "__main__" n'est plus utile car lancé par main.py

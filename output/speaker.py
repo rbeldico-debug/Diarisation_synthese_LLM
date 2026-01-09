@@ -3,13 +3,12 @@ import edge_tts
 import pygame
 import io
 import multiprocessing
-from config import Config
+from core.settings import settings
 
 
 class EdgeVoice:
     def __init__(self):
-        # Voix féminine haute qualité : Denise
-        self.voice = "fr-FR-VivienneMultilingualNeural"
+        self.voice = settings.TTS_VOICE
         if not pygame.mixer.get_init():
             pygame.mixer.init()
 
@@ -36,16 +35,14 @@ class EdgeVoice:
 
 
 def mouth_worker(tts_queue, stop_event):
-    """Consomme la queue de briefing vocal."""
-    print("[Bouche] ✅ Prête (Mode Haute Qualité Edge-TTS).")
+    print(f"[Bouche] ✅ Prête ({settings.TTS_VOICE}).")
     speaker = EdgeVoice()
 
     while not stop_event.is_set():
         try:
-            # On attend un long texte (le briefing)
             text = tts_queue.get(timeout=1.0)
             if text:
-                print(f"[Bouche] 🎙️ Lecture du briefing en cours...")
+                print(f"[Bouche] 🎙️ Lecture en cours...")
                 speaker.speak(text)
         except:
             continue
